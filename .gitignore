@@ -1,0 +1,24 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/test_rag.py
+
+# Local DB
+backend/chroma_db/
+
+# Credentials / Secrets
+backend/.env
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Production build output
+frontend/dist/
+
+# OS / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
