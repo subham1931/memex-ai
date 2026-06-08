@@ -5,7 +5,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Configure Gemini API Key
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -50,12 +50,12 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
             
     return chunks
 
-def add_document(filename: str, content: str) -> dict:
+def add_document(filename: str, content: str, user_id: str) -> dict:
     """
-    Chunks document content, embeds each chunk, and stores it in ChromaDB.
+    Chunks document content, embeds each chunk, and stores it in ChromaDB, isolated by user_id.
     """
-    # Delete existing entries for this file to prevent duplicates on re-upload
-    delete_document(filename)
+    # Delete existing entries for this file and user to prevent duplicates on re-upload
+    delete_document(filename, user_id)
     
     chunks = chunk_text(content)
     if not chunks:
@@ -65,8 +65,8 @@ def add_document(filename: str, content: str) -> dict:
     embeddings = embedding_model.encode(chunks).tolist()
     
     # Generate unique IDs, documents, and metadata for ChromaDB
-    ids = [f"{filename}_{i}" for i in range(len(chunks))]
-    metadatas = [{"source": filename} for _ in chunks]
+    ids = [f"{user_id}_{filename}_{i}" for i in range(len(chunks))]
+    metadatas = [{"source": filename, "user_id": user_id} for _ in chunks]
     
     # Add to collection
     collection.add(
@@ -78,9 +78,9 @@ def add_document(filename: str, content: str) -> dict:
     
     return {"status": "success", "chunks_added": len(chunks)}
 
-def query_documents(question: str, n_results: int = 3) -> list[dict]:
+def query_documents(question: str, user_id: str, n_results: int = 3) -> list[dict]:
     """
-    Embeds the question, retrieves top n_results relevant chunks from ChromaDB.
+    Embeds the question, retrieves top n_results relevant chunks from ChromaDB for the specified user_id.
     """
     if not question.strip():
         return []
@@ -96,9 +96,11 @@ def query_documents(question: str, n_results: int = 3) -> list[dict]:
     # n_results cannot be larger than collection size
     query_n = min(n_results, count)
     
+    # Query only documents belonging to the user
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=query_n
+        n_results=query_n,
+        where={"user_id": user_id}
     )
     
     chunks = []
@@ -150,7 +152,7 @@ TONE: Smart, direct, helpful. Like a knowledgeable friend, not a textbook.
     
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-3.5-flash",
+            model_name="gemini-1.5-flash",
             system_instruction=system_instruction
         )
         
@@ -160,11 +162,11 @@ TONE: Smart, direct, helpful. Like a knowledgeable friend, not a textbook.
     except Exception as e:
         return f"Error communicating with Gemini API: {str(e)}"
 
-def get_uploaded_files() -> list[str]:
+def get_uploaded_files(user_id: str) -> list[str]:
     """
-    Returns unique list of filenames uploaded to ChromaDB.
+    Returns unique list of filenames uploaded to ChromaDB by the specified user_id.
     """
-    data = collection.get(include=["metadatas"])
+    data = collection.get(where={"user_id": user_id}, include=["metadatas"])
     metadatas = data.get("metadatas", [])
     
     files = set()
@@ -174,8 +176,16 @@ def get_uploaded_files() -> list[str]:
             
     return sorted(list(files))
 
-def delete_document(filename: str) -> None:
+def delete_document(filename: str, user_id: str) -> None:
     """
-    Removes all chunks of a filename from ChromaDB.
+    Removes all chunks of a filename for the specified user_id from ChromaDB.
     """
-    collection.delete(where={"source": filename})
+    # Use $and operator to filter by source and user_id
+    collection.delete(
+        where={
+            "$and": [
+                {"source": {"$eq": filename}},
+                {"user_id": {"$eq": user_id}}
+            ]
+        }
+    )

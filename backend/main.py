@@ -1,8 +1,23 @@
 import os
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
+from supabase import create_client, Client
+
+# Initialize Supabase client
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+supabase: Optional[Client] = None
+
+if supabase_url and supabase_key and supabase_url != "your_supabase_project_url":
+    try:
+        supabase = create_client(supabase_url, supabase_key)
+    except Exception as e:
+        print(f"Warning: Failed to initialize Supabase client: {str(e)}")
 
 # Import RAG pipeline functions
 from rag import add_document, query_documents, ask_gemini, get_uploaded_files, delete_document
@@ -18,14 +33,50 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+# Auth dependency to verify Supabase JWT
+async def get_current_user(authorization: str = Header(None)):
+    if not supabase:
+        raise HTTPException(
+            status_code=500, 
+            detail="Supabase client is not configured on the server. Please check your backend/.env variables."
+        )
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header is missing.")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid authorization scheme. Must use 'Bearer <JWT>'."
+        )
+        
+    token = authorization.replace("Bearer ", "")
+    try:
+        # Fetch user profile using token from Supabase
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(status_code=401, detail="Invalid or expired session token.")
+        return user_response.user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
+
 class AskRequest(BaseModel):
     question: str
 
+class SessionCreate(BaseModel):
+    title: Optional[str] = "New Chat"
+
+class MessageSave(BaseModel):
+    role: str
+    content: str
+    sources: Optional[List[dict]] = None
+
+class TitlePatch(BaseModel):
+    title: str
+
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), user = Depends(get_current_user)):
     """
     Accepts .md, .txt, and .pdf files, chunks them, embeds with sentence-transformers,
-    and stores them in ChromaDB.
+    and stores them in ChromaDB, isolated by user_id.
     """
     filename = file.filename
     if not filename:
@@ -61,9 +112,9 @@ async def upload_file(file: UploadFile = File(...)):
             raise e
         raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
         
-    # Process through RAG pipeline
+    # Process through RAG pipeline, passing user.id
     try:
-        result = add_document(filename, text_content)
+        result = add_document(filename, text_content, user.id)
         return {
             "filename": filename,
             "status": result["status"],
@@ -74,9 +125,9 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to index document: {str(e)}")
 
 @app.post("/ask")
-async def ask_question(request: AskRequest):
+async def ask_question(request: AskRequest, user = Depends(get_current_user)):
     """
-    Takes a question, retrieves top 3 relevant chunks from ChromaDB,
+    Takes a question, retrieves top 3 relevant chunks from ChromaDB (filtered by user_id),
     submits them with context to Gemini 1.5 Flash, and returns the answer with sources.
     """
     question = request.question.strip()
@@ -84,8 +135,8 @@ async def ask_question(request: AskRequest):
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
         
     try:
-        # Retrieve top 3 relevant chunks
-        context_chunks = query_documents(question, n_results=3)
+        # Retrieve top 3 relevant chunks, passing user.id
+        context_chunks = query_documents(question, user.id, n_results=3)
         
         # Get Gemini's answer
         answer = ask_gemini(question, context_chunks)
@@ -98,27 +149,140 @@ async def ask_question(request: AskRequest):
         raise HTTPException(status_code=500, detail=f"Error in RAG pipeline: {str(e)}")
 
 @app.get("/files")
-async def list_files():
+async def list_files(user = Depends(get_current_user)):
     """
-    Returns list of all unique uploaded files in ChromaDB.
+    Returns list of all unique uploaded files in ChromaDB, filtered by user_id.
     """
     try:
-        files = get_uploaded_files()
+        files = get_uploaded_files(user.id)
         return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
 @app.delete("/files/{filename}")
-async def delete_file(filename: str):
+async def delete_file(filename: str, user = Depends(get_current_user)):
     """
-    Removes file and its chunks from ChromaDB.
+    Removes file and its chunks from ChromaDB, filtered by user_id.
     """
     try:
-        # Delete document from DB
-        delete_document(filename)
+        # Delete document from DB, passing user.id
+        delete_document(filename, user.id)
         return {"status": "success", "message": f"File '{filename}' successfully deleted from database."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file '{filename}': {str(e)}")
+
+@app.post("/sessions")
+async def create_session(request: SessionCreate = None, user = Depends(get_current_user)):
+    """
+    Creates a new chat session linked to the authenticated user.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    title = request.title if request else "New Chat"
+    try:
+        res = supabase.table("sessions").insert({"title": title, "user_id": user.id}).execute()
+        if res.data:
+            return res.data[0]
+        raise HTTPException(status_code=500, detail="Failed to create session in Supabase.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/sessions")
+async def list_sessions(user = Depends(get_current_user)):
+    """
+    Lists all sessions owned by the authenticated user.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        res = supabase.table("sessions").select("*").eq("user_id", user.id).order("updated_at", desc=True).execute()
+        return res.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/sessions/{id}/messages")
+async def list_session_messages(id: str, user = Depends(get_current_user)):
+    """
+    Lists messages within a session, confirming session ownership.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        # Ensure session ownership
+        session_check = supabase.table("sessions").select("user_id").eq("id", id).execute()
+        if not session_check.data or session_check.data[0]["user_id"] != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You do not own this session.")
+            
+        res = supabase.table("messages").select("*").eq("session_id", id).eq("user_id", user.id).order("created_at", desc=False).execute()
+        return res.data
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.post("/sessions/{id}/messages")
+async def save_session_message(id: str, msg: MessageSave, user = Depends(get_current_user)):
+    """
+    Saves a chat message in a session, verifying ownership and updating timestamp.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        # Ensure session ownership
+        session_check = supabase.table("sessions").select("user_id").eq("id", id).execute()
+        if not session_check.data or session_check.data[0]["user_id"] != user.id:
+            raise HTTPException(status_code=403, detail="Forbidden: You do not own this session.")
+            
+        insert_data = {
+            "session_id": id,
+            "role": msg.role,
+            "content": msg.content,
+            "sources": msg.sources,
+            "user_id": user.id
+        }
+        res = supabase.table("messages").insert(insert_data).execute()
+        
+        # Touch session updated_at
+        import datetime
+        now_iso = datetime.datetime.utcnow().isoformat()
+        supabase.table("sessions").update({"updated_at": now_iso}).eq("id", id).eq("user_id", user.id).execute()
+        
+        if res.data:
+            return res.data[0]
+        raise HTTPException(status_code=500, detail="Failed to save message in Supabase.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.delete("/sessions/{id}")
+async def delete_session(id: str, user = Depends(get_current_user)):
+    """
+    Deletes a session owned by the authenticated user.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        # Cascade delete is enabled on foreign keys, so messages delete automatically
+        res = supabase.table("sessions").delete().eq("id", id).eq("user_id", user.id).execute()
+        return {"status": "success", "message": "Session and its messages deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.patch("/sessions/{id}/title")
+async def update_session_title(id: str, patch: TitlePatch, user = Depends(get_current_user)):
+    """
+    Renames a session owned by the authenticated user.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        res = supabase.table("sessions").update({"title": patch.title}).eq("id", id).eq("user_id", user.id).execute()
+        if res.data:
+            return res.data[0]
+        raise HTTPException(status_code=404, detail="Session not found or not owned by user.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
