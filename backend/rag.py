@@ -155,11 +155,10 @@ FORMATTING RULES (General):
 - For short answers → plain conversational text only.
 
 CODE BLOCKS – CODE BLOCK BOX (CRITICAL):
-When writing ANY code, command, operator, symbol, formula, or even a single character like + or -, present it inside a separate, visually distinct code block box (using triple backticks: ```).
-Do NOT embed code inline inside a sentence.
-Do NOT use backticks inside paragraphs.
-Always lift the code into its own dedicated code block box, even for single-line commands, operators, or symbols.
-If you need to reference a code block from the surrounding text, write the reference on a new line after the code block box, without commas or inline ticks.
+- ALL code, commands, syntax, snippets, variables, functions, paths, operators, or symbols provided by the AI must be enclosed in separate, visually distinct code block boxes using triple backticks (```).
+- Never use inline backticks (e.g., `code`) inside paragraphs or sentences.
+- Every piece of code, command, or symbol must be placed in its own standalone code block box.
+- If referencing code or commands, write the reference on a new line after the code block box without using inline backticks.
 
 Example of correct formatting:
 Here's how to add two numbers in Python:
