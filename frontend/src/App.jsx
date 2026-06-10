@@ -205,14 +205,18 @@ export default function App() {
   // Save message to Supabase
   const saveMessageToSupabase = async (sessionId, role, content, sources = null) => {
     try {
-      await fetchWithAuth(`${API_BASE}/sessions/${sessionId}/messages`, {
+      const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role, content, sources })
       });
+      if (res.ok) {
+        return await res.json();
+      }
     } catch (err) {
       console.error('Failed to save message to Supabase:', err);
     }
+    return null;
   };
 
   // Handle file uploads
@@ -298,7 +302,13 @@ export default function App() {
     setError(null);
 
     // 1. Save user message to Supabase
-    await saveMessageToSupabase(currentSessionId, 'user', text);
+    const savedUserMsg = await saveMessageToSupabase(currentSessionId, 'user', text);
+    if (savedUserMsg && savedUserMsg.id) {
+      setMessages((prev) =>
+        prev.map(m => m === userMsg ? { ...m, id: savedUserMsg.id } : m)
+      );
+      userMsg.id = savedUserMsg.id;
+    }
 
     // 2. Auto-generate title if it's the first message of "New Chat"
     const currentSession = sessions.find(s => s.id === currentSessionId);
@@ -332,10 +342,14 @@ export default function App() {
         text: data.answer,
         sources: data.sources || [],
       };
-      setMessages((prev) => [...prev, assistantMsg]);
 
       // 4. Save assistant response to Supabase
-      await saveMessageToSupabase(currentSessionId, 'assistant', data.answer, data.sources || []);
+      const savedAssistantMsg = await saveMessageToSupabase(currentSessionId, 'assistant', data.answer, data.sources || []);
+      if (savedAssistantMsg && savedAssistantMsg.id) {
+        assistantMsg.id = savedAssistantMsg.id;
+      }
+      
+      setMessages((prev) => [...prev, assistantMsg]);
 
       // 5. Refresh sessions list to bubble active session to the top (new updated_at)
       await fetchSessions();
@@ -346,8 +360,98 @@ export default function App() {
         text: `⚠️ **Error calling RAG assistant:** ${err.message}. Please check that the server is online and your Gemini API Key is configured in backend/.env.`,
         sources: [],
       };
+      const savedErrorMsg = await saveMessageToSupabase(currentSessionId, 'assistant', errorMsg.text, []);
+      if (savedErrorMsg && savedErrorMsg.id) {
+        errorMsg.id = savedErrorMsg.id;
+      }
       setMessages((prev) => [...prev, errorMsg]);
-      await saveMessageToSupabase(currentSessionId, 'assistant', errorMsg.text, []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle editing user questions and regenerating response
+  const handleEditMessage = async (messageId, newText) => {
+    if (!newText.trim() || loading || !activeSessionId) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Call PATCH endpoint on backend to update the question text in DB
+      const updateRes = await fetchWithAuth(`${API_BASE}/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newText })
+      });
+      
+      if (!updateRes.ok) {
+        throw new Error('Failed to update message.');
+      }
+
+      // 2. Call DELETE endpoint to delete all subsequent messages in the session from DB
+      const deleteRes = await fetchWithAuth(`${API_BASE}/messages/${messageId}/subsequent`, {
+        method: 'DELETE'
+      });
+
+      if (!deleteRes.ok) {
+        throw new Error('Failed to delete subsequent messages.');
+      }
+
+      // 3. Immediately update the local state to remove subsequent messages and update the edited message text
+      setMessages((prev) => {
+        const idx = prev.findIndex(m => m.id === messageId);
+        if (idx === -1) return prev;
+        return [
+          ...prev.slice(0, idx),
+          { ...prev[idx], text: newText }
+        ];
+      });
+
+      // 4. Fetch the regenerated response from `/ask`
+      const askRes = await fetchWithAuth(`${API_BASE}/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question: newText }),
+      });
+
+      if (!askRes.ok) {
+        const errData = await askRes.json();
+        throw new Error(errData.detail || 'Request failed.');
+      }
+
+      const data = await askRes.json();
+
+      // 5. Add assistant response to state
+      const assistantMsg = {
+        role: 'assistant',
+        text: data.answer,
+        sources: data.sources || [],
+      };
+      
+      // 6. Save the new assistant message to Supabase
+      const savedAssistantMsg = await saveMessageToSupabase(activeSessionId, 'assistant', data.answer, data.sources || []);
+      if (savedAssistantMsg && savedAssistantMsg.id) {
+        assistantMsg.id = savedAssistantMsg.id;
+      }
+
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      // 7. Refresh sessions list to update active session order
+      await fetchSessions();
+    } catch (err) {
+      console.error(err);
+      const errorMsg = {
+        role: 'assistant',
+        text: `⚠️ **Error regenerating RAG assistant response:** ${err.message}.`,
+        sources: [],
+      };
+      const savedErrorMsg = await saveMessageToSupabase(activeSessionId, 'assistant', errorMsg.text, []);
+      if (savedErrorMsg && savedErrorMsg.id) {
+        errorMsg.id = savedErrorMsg.id;
+      }
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
@@ -403,6 +507,7 @@ export default function App() {
         <ChatWindow
           messages={messages}
           onSendMessage={handleSendMessage}
+          onEditMessage={handleEditMessage}
           loading={loading}
           hasFiles={files.length > 0}
           onUpload={handleUpload}

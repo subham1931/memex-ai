@@ -5,6 +5,7 @@ import { Send, Plus, Loader2, Sun, Moon } from 'lucide-react';
 export default function ChatWindow({ 
   messages, 
   onSendMessage, 
+  onEditMessage,
   loading, 
   hasFiles,
   onUpload,
@@ -126,7 +127,12 @@ export default function ChatWindow({
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg, index) => (
-              <MessageBubble key={index} message={msg} />
+              <MessageBubble 
+                key={msg.id || index} 
+                message={msg} 
+                onEditMessage={onEditMessage} 
+                loading={loading}
+              />
             ))}
             
             {loading && (

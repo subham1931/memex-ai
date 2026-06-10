@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { FileText, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { FileText, ChevronDown, ChevronUp, Copy, Check, Edit, X, Save } from 'lucide-react';
 
-export default function MessageBubble({ message }) {
-  const { role, text, sources } = message;
+export default function MessageBubble({ message, onEditMessage, loading }) {
+  const { id, role, text, sources } = message;
   const isAssistant = role === 'assistant';
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editText, setEditText] = useState(text);
   const [time] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+  useEffect(() => {
+    setEditText(text);
+  }, [text]);
 
   const handleCopy = async () => {
     try {
@@ -19,7 +25,53 @@ export default function MessageBubble({ message }) {
     }
   };
 
+  const handleSaveEdit = () => {
+    if (editText.trim() && editText.trim() !== text && onEditMessage && id) {
+      onEditMessage(id, editText.trim());
+      setIsEditing(false);
+    } else {
+      setIsEditing(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditText(text);
+    setIsEditing(false);
+  };
+
   if (!isAssistant) {
+    if (isEditing) {
+      return (
+        <div className="flex flex-col items-end w-full py-2 select-none">
+          <div className="w-full max-w-[65%] bg-input-bg border border-accent rounded-[8px] p-3 flex flex-col gap-3.5 shadow-md">
+            <textarea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              className="w-full resize-none bg-transparent outline-none border-none text-text-primary text-[13px] leading-relaxed font-sans min-h-[60px]"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2 text-[10px]">
+              <button
+                onClick={handleCancelEdit}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-border-subtle bg-sidebar-bg text-text-muted hover:text-text-primary cursor-pointer transition-colors duration-150"
+              >
+                <X className="h-3 w-3" />
+                <span>Cancel</span>
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={!editText.trim() || loading}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-accent hover:bg-accent-hover text-white cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="h-3 w-3" />
+                <span>Save & Submit</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-end w-full group py-1">
         <div className="relative bg-message-user-bg border border-message-user-border rounded-[8px] px-3.5 py-2.5 max-w-[65%] text-text-primary text-[13px] leading-relaxed shadow-sm transition-colors duration-150">
@@ -28,7 +80,16 @@ export default function MessageBubble({ message }) {
             {time}
           </span>
         </div>
-        <div className="mt-1 mr-1 flex items-center justify-end max-w-[65%]">
+        <div className="mt-1 mr-1 flex items-center justify-end gap-2.5 max-w-[65%] opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
+          {id && !loading && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-accent transition-colors duration-150 cursor-pointer"
+            >
+              <Edit className="h-3 w-3" />
+              <span>Edit</span>
+            </button>
+          )}
           <button
             onClick={handleCopy}
             className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-accent transition-colors duration-150 cursor-pointer"
@@ -49,6 +110,7 @@ export default function MessageBubble({ message }) {
       </div>
     );
   }
+
 
   return (
     <div className="flex justify-start w-full group py-2">

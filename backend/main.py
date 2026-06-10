@@ -72,6 +72,9 @@ class MessageSave(BaseModel):
 class TitlePatch(BaseModel):
     title: str
 
+class MessageUpdate(BaseModel):
+    content: str
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user = Depends(get_current_user)):
     """
@@ -281,6 +284,51 @@ async def update_session_title(id: str, patch: TitlePatch, user = Depends(get_cu
         if res.data:
             return res.data[0]
         raise HTTPException(status_code=404, detail="Session not found or not owned by user.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.patch("/messages/{message_id}")
+async def update_message(message_id: str, patch: MessageUpdate, user = Depends(get_current_user)):
+    """
+    Updates a message's content if owned by the user.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        res = supabase.table("messages").update({"content": patch.content}).eq("id", message_id).eq("user_id", user.id).execute()
+        if res.data:
+            return res.data[0]
+        raise HTTPException(status_code=404, detail="Message not found or not owned by user.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.delete("/messages/{message_id}/subsequent")
+async def delete_subsequent_messages(message_id: str, user = Depends(get_current_user)):
+    """
+    Deletes all messages in the same session that were created after the target message.
+    """
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
+    try:
+        # 1. Get the target message details (created_at, session_id)
+        msg_check = supabase.table("messages").select("created_at", "session_id").eq("id", message_id).eq("user_id", user.id).execute()
+        if not msg_check.data:
+            raise HTTPException(status_code=404, detail="Target message not found or not owned by user.")
+        
+        target_created_at = msg_check.data[0]["created_at"]
+        session_id = msg_check.data[0]["session_id"]
+        
+        # 2. Delete all messages created_at > target_created_at in the same session
+        res = supabase.table("messages").delete().eq("session_id", session_id).eq("user_id", user.id).gt("created_at", target_created_at).execute()
+        
+        # 3. Touch session updated_at
+        import datetime
+        now_iso = datetime.datetime.utcnow().isoformat()
+        supabase.table("sessions").update({"updated_at": now_iso}).eq("id", session_id).eq("user_id", user.id).execute()
+        
+        return {"status": "success", "deleted_count": len(res.data) if res.data else 0}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
