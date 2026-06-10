@@ -1,15 +1,14 @@
 import os
 import chromadb
 from sentence_transformers import SentenceTransformer
-import google.generativeai as genai
+from groq import Groq
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv(override=True)
 
-# Configure Gemini API Key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
+# Initialize Groq client
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Set DB Path
 DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
@@ -116,33 +115,25 @@ def query_documents(question: str, user_id: str, n_results: int = 3) -> list[dic
             
     return chunks
 
-FALLBACK_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite", 
-    "gemini-1.5-flash-latest"
-]
-
-def get_gemini_response(prompt, system_instruction=None):
-    for model_name in FALLBACK_MODELS:
-        try:
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=system_instruction
-            )
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            if "404" in str(e):
-                continue
-            raise e
-    raise Exception("All Gemini models failed")
+def get_llm_response(prompt, system_instruction=None):
+    messages = []
+    if system_instruction:
+        messages.append({"role": "system", "content": system_instruction})
+    messages.append({"role": "user", "content": prompt})
+    
+    response = client.chat.completions.create(
+        model="llama3-8b-8192",
+        messages=messages,
+        max_tokens=1000
+    )
+    return response.choices[0].message.content
 
 def ask_gemini(question: str, context_chunks: list[dict]) -> str:
     """
-    Queries Gemini using context chunks and strict system instructions with fallback models.
+    Queries LLM (via Groq) using context chunks and strict system instructions.
     """
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
-        return "Error: Gemini API Key is not configured. Please add your GEMINI_API_KEY to the backend/.env file."
+    if not os.getenv("GROQ_API_KEY") or os.getenv("GROQ_API_KEY") == "your_groq_api_key_here":
+        return "Error: Groq API Key is not configured. Please add your GROQ_API_KEY to the backend/.env file."
         
     # Format context
     if not context_chunks:
@@ -217,7 +208,7 @@ TONE:
     
     try:
         prompt = f"Context:\n{context_str}\n\nUser Question: {question}"
-        return get_gemini_response(prompt, system_instruction)
+        return get_llm_response(prompt, system_instruction)
     except Exception as e:
         return f"Error communicating with Gemini API: {str(e)}"
 
