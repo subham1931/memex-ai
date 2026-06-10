@@ -156,6 +156,7 @@ FORMATTING RULES (General):
 
 CODE BLOCKS – CODE BLOCK BOX (CRITICAL):
 - ALL code, commands, syntax, snippets, variables, functions, paths, operators, or symbols provided by the AI must be enclosed in separate, visually distinct code block boxes using triple backticks (```).
+- When writing or providing code snippets (such as HTML, React, JSX, or other component code), you MUST always include the corresponding styling (e.g. CSS rules, Tailwind classes, or inline styles) directly within the code snippet, so it is fully styled.
 - Never use inline backticks (e.g., `code`) inside paragraphs or sentences.
 - Every piece of code, command, or symbol must be placed in its own standalone code block box.
 - If referencing code or commands, write the reference on a new line after the code block box without using inline backticks.
