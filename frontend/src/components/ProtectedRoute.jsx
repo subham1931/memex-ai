@@ -27,7 +27,7 @@ export default function ProtectedRoute({ children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen w-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen w-screen bg-app-bg flex items-center justify-center">
         <Loader2 className="h-10 w-10 text-purple-500 animate-spin" />
       </div>
     );

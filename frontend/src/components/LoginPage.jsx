@@ -28,12 +28,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-screen bg-[#0a0a0a] flex items-center justify-center font-sans relative overflow-hidden">
+    <div className="min-h-screen w-screen bg-app-bg flex items-center justify-center font-sans relative overflow-hidden">
       {/* Background radial glow effect */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-purple-900/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Main card */}
-      <div className="w-full max-w-[460px] bg-[#111111] border border-[#222222] rounded-2xl p-12 flex flex-col items-center justify-center shadow-2xl shadow-black relative z-10 mx-4 animate-fade-in">
+      <div className="w-full max-w-[460px] bg-sidebar-bg border border-border-subtle rounded-2xl p-12 flex flex-col items-center justify-center shadow-2xl shadow-black/30 relative z-10 mx-4 animate-fade-in">
         {/* Brand Logo */}
         <div className="h-14 w-14 rounded-2xl bg-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/20 mb-6 transition-transform hover:scale-105 duration-300">
           <Sparkles className="h-7 w-7 text-white" />
@@ -41,10 +41,10 @@ export default function LoginPage() {
 
         {/* Title & Tagline */}
         <div className="text-center mb-10 space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent">
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-text-primary to-purple-500 bg-clip-text text-transparent">
             Memex-AI
           </h1>
-          <p className="text-sm text-zinc-400 font-medium">
+          <p className="text-sm text-text-muted font-medium">
             Your private notes intelligence
           </p>
         </div>
@@ -52,14 +52,14 @@ export default function LoginPage() {
         {/* Google Login Button */}
         <button
           onClick={handleGoogleLogin}
-          className="w-full flex items-center justify-center py-3.5 px-5 bg-white hover:bg-zinc-100 text-zinc-900 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer shadow-lg shadow-black/10 hover:shadow-white/5 hover:scale-[1.01] active:scale-[0.99] border-none outline-none"
+          className="w-full flex items-center justify-center py-3.5 px-5 bg-white hover:bg-zinc-100 text-zinc-900 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer shadow-lg shadow-black/5 hover:shadow-white/5 hover:scale-[1.01] active:scale-[0.99] border border-border-subtle outline-none"
         >
           <GoogleIcon />
           Sign in with Google
         </button>
 
         {/* Footer Security Muted Copy */}
-        <p className="text-[10px] text-zinc-600 mt-8 font-medium tracking-wide uppercase select-none">
+        <p className="text-[10px] text-text-label mt-8 font-medium tracking-wide uppercase select-none">
           Your notes never leave your device
         </p>
       </div>

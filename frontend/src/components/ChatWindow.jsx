@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
-import { Send, Plus, Loader2 } from 'lucide-react';
+import { Send, Plus, Loader2, Sun, Moon } from 'lucide-react';
 
 export default function ChatWindow({ 
   messages, 
@@ -8,7 +8,9 @@ export default function ChatWindow({
   loading, 
   hasFiles,
   onUpload,
-  uploading
+  uploading,
+  theme,
+  onToggleTheme
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -58,7 +60,7 @@ export default function ChatWindow({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0a0a0a] text-[#f5f5f5]">
+    <div className="flex-1 flex flex-col h-full bg-app-bg text-text-primary transition-colors duration-150">
       {/* Hidden file input for top-bar button */}
       <input
         type="file"
@@ -69,24 +71,34 @@ export default function ChatWindow({
       />
 
       {/* Top Status Bar */}
-      <div className="h-12 border-b border-[#222222] px-6 flex items-center justify-between bg-[#0a0a0a] shrink-0 select-none">
+      <div className="h-12 border-b border-border-subtle px-6 flex items-center justify-between bg-app-bg shrink-0 select-none transition-colors duration-150">
         <div className="flex items-center gap-2">
-          <div className="h-1.5 w-1.5 rounded-full bg-[#22c55e]" />
-          <span className="text-[11px] font-normal text-[#666666]">Vector store ready</span>
+          <div className="h-1.5 w-1.5 rounded-full bg-success" />
+          <span className="text-[11px] font-normal text-text-muted">Vector store ready</span>
         </div>
         
-        <button
-          onClick={triggerUpload}
-          disabled={uploading}
-          className="flex items-center gap-1.5 text-xs text-[#666666] hover:text-[#f5f5f5] transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none p-0"
-        >
-          {uploading ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
-          <span>{uploading ? 'Upload notes' : 'Upload notes'}</span>
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onToggleTheme}
+            className="p-1.5 rounded-md hover:bg-item-hover text-text-muted hover:text-text-primary transition-all cursor-pointer border-none bg-transparent flex items-center justify-center outline-none"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-purple-600" />}
+          </button>
+
+          <button
+            onClick={triggerUpload}
+            disabled={uploading}
+            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none p-0 outline-none"
+          >
+            {uploading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
+            <span>{uploading ? 'Upload notes' : 'Upload notes'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Messages Feed */}
@@ -94,19 +106,19 @@ export default function ChatWindow({
         {messages.length === 0 ? (
           <div className="max-w-2xl mx-auto h-full flex flex-col justify-center text-left space-y-6">
             <div className="space-y-1">
-              <span className="text-[9px] uppercase tracking-[0.2em] text-[#666666] font-semibold">
+              <span className="text-[9px] uppercase tracking-[0.2em] text-text-muted font-semibold">
                 MEMEX INTELLIGENCE
               </span>
-              <h2 className="text-xl font-normal text-[#f5f5f5] tracking-tight">
+              <h2 className="text-xl font-normal text-text-primary tracking-tight">
                 What would you like to know?
               </h2>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-normal text-[#555555] bg-[#111111] border border-[#222222] px-2.5 py-1 rounded-full">
+              <span className="text-[10px] font-normal text-text-label bg-sidebar-bg border border-border-subtle px-2.5 py-1 rounded-full">
                 Note Search
               </span>
-              <span className="text-[10px] font-normal text-[#555555] bg-[#111111] border border-[#222222] px-2.5 py-1 rounded-full">
+              <span className="text-[10px] font-normal text-text-label bg-sidebar-bg border border-border-subtle px-2.5 py-1 rounded-full">
                 Strict Context Mode
               </span>
             </div>
@@ -118,18 +130,18 @@ export default function ChatWindow({
             ))}
             
             {loading && (
-              <div className="flex gap-3 pl-3 py-2 border-l border-[#7c3aed] text-left animate-pulse">
+              <div className="flex gap-3 pl-3 py-2 border-l border-accent text-left animate-pulse">
                 <div className="flex-1 space-y-2">
-                  <div className="text-[10px] uppercase tracking-[0.15em] text-[#666666] font-semibold">
+                  <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold">
                     Memex AI
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-[#666666]">
+                  <div className="flex items-center gap-1.5 text-xs text-text-muted">
                     <span className="inline-flex gap-1 shrink-0">
-                      <span className="h-1 w-1 rounded-full bg-[#7c3aed] animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="h-1 w-1 rounded-full bg-[#7c3aed] animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="h-1 w-1 rounded-full bg-[#7c3aed] animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <span className="h-1 w-1 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="h-1 w-1 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="h-1 w-1 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
                     </span>
-                    <span className="text-[10px] text-[#666666]">Composing answer...</span>
+                    <span className="text-[10px] text-text-muted">Composing answer...</span>
                   </div>
                 </div>
               </div>
@@ -141,9 +153,9 @@ export default function ChatWindow({
       </div>
 
       {/* Input Form Footer */}
-      <div className="p-4 md:p-6 shrink-0 bg-[#0a0a0a]">
+      <div className="p-4 md:p-6 shrink-0 bg-app-bg transition-colors duration-150">
         <div className="max-w-3xl mx-auto">
-          <div className="relative flex items-end bg-[#141414] border border-[#2a2a2a] rounded-lg focus-within:border-[#7c3aed] focus-within:ring-1 focus-within:ring-[#7c3aed] transition-all p-1.5 gap-2">
+          <div className="relative flex items-end bg-input-bg border border-border-subtle rounded-lg focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all p-1.5 gap-2">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -152,17 +164,17 @@ export default function ChatWindow({
               onKeyDown={handleKeyDown}
               placeholder={hasFiles ? "Ask a question about your notes..." : "Upload notes to start querying..."}
               disabled={!hasFiles || loading}
-              className="flex-1 resize-none bg-transparent outline-none border-none py-1.5 px-2.5 text-sm text-[#f5f5f5] placeholder-[#666666] max-h-40 min-h-[36px] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 resize-none bg-transparent outline-none border-none py-1.5 px-2.5 text-sm text-text-primary placeholder-text-muted max-h-40 min-h-[36px] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               onClick={handleSend}
               disabled={!input.trim() || loading || !hasFiles}
-              className="h-8 w-8 rounded-md bg-[#7c3aed] hover:bg-[#6d28d9] active:bg-[#5b21b6] text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:opacity-50 disabled:bg-[#1a1a1a] disabled:text-[#555] disabled:cursor-not-allowed"
+              className="h-8 w-8 rounded-md bg-accent hover:bg-accent-hover active:bg-accent text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 disabled:opacity-50 disabled:bg-sidebar-bg disabled:text-text-label disabled:cursor-not-allowed"
             >
               <Send className="h-3.5 w-3.5" />
             </button>
           </div>
-          <p className="text-center text-[10px] text-[#666666] mt-2">
+          <p className="text-center text-[10px] text-text-muted mt-2">
             Memex answers from your notes only
           </p>
         </div>

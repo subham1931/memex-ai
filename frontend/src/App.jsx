@@ -18,6 +18,26 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
 
+  // Theme State (Dark Mode default)
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'dark';
+  });
+
+  // Apply theme to document element
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'light') {
+      root.classList.add('light');
+    } else {
+      root.classList.remove('light');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
+
   // Load user profile details
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -349,7 +369,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0a] font-sans text-[#f5f5f5] antialiased">
+    <div className="flex h-screen w-screen overflow-hidden bg-app-bg font-sans text-text-primary antialiased">
       {/* Sidebar (File list, uploads & Recents history) */}
       <Sidebar
         files={files}
@@ -387,6 +407,8 @@ export default function App() {
           hasFiles={files.length > 0}
           onUpload={handleUpload}
           uploading={uploading}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       </div>
     </div>
