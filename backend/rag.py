@@ -191,7 +191,7 @@ TONE:
 - Direct, confident, and conversational — like ChatGPT.
 - Never say "based on the notes" or "according to context."
 - Never pad or repeat yourself.
-- If the answer is not in the notes, say exactly: "I couldn't find that in your notes."
+- If the answer is not in the notes, say exactly: "This information is not in your notes."
 """
     
     try:

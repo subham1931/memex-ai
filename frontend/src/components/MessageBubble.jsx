@@ -1,21 +1,50 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { FileText, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 
 export default function MessageBubble({ message }) {
   const { role, text, sources } = message;
   const isAssistant = role === 'assistant';
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [time] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
 
   if (!isAssistant) {
     return (
-      <div className="flex justify-end w-full group py-1">
+      <div className="flex flex-col items-end w-full group py-1">
         <div className="relative bg-message-user-bg border border-message-user-border rounded-[8px] px-3.5 py-2.5 max-w-[65%] text-text-primary text-[13px] leading-relaxed shadow-sm transition-colors duration-150">
           <p className="whitespace-pre-wrap">{text}</p>
           <span className="absolute -left-12 top-3 text-[9px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
             {time}
           </span>
+        </div>
+        <div className="mt-1 mr-1 flex items-center justify-end max-w-[65%]">
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-accent transition-colors duration-150 cursor-pointer"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3 text-success animate-fade-in" />
+                <span className="text-success font-medium">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
     );
@@ -58,38 +87,56 @@ export default function MessageBubble({ message }) {
           </ReactMarkdown>
         </div>
 
-        {/* Collapsible Sources Section */}
-        {sources && sources.length > 0 && (
-          <div className="mt-3">
+        {/* Action Row: Copy option and Sources button */}
+        <div className="mt-3 flex items-center gap-2 select-none">
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1.5 text-[10px] text-text-muted hover:text-accent transition-colors duration-150 cursor-pointer border border-border-subtle bg-sidebar-bg/50 px-2.5 py-0.5 rounded-full"
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3 text-success animate-fade-in" />
+                <span className="text-success font-medium">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span>Copy answer</span>
+              </>
+            )}
+          </button>
+
+          {sources && sources.length > 0 && (
             <button
               onClick={() => setSourcesOpen(!sourcesOpen)}
-              className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors cursor-pointer border border-border-subtle bg-sidebar-bg/50 px-2 py-0.5 rounded-full"
+              className="inline-flex items-center gap-1 text-[10px] text-text-muted hover:text-text-primary transition-colors cursor-pointer border border-border-subtle bg-sidebar-bg/50 px-2.5 py-0.5 rounded-full"
             >
               <span>{sources.length} {sources.length === 1 ? 'source' : 'sources'}</span>
               {sourcesOpen ? <ChevronUp className="h-2.5 w-2.5" /> : <ChevronDown className="h-2.5 w-2.5" />}
             </button>
+          )}
+        </div>
 
-            {sourcesOpen && (
-              <div className="mt-2 space-y-1.5 animate-fade-in max-w-2xl">
-                {sources.map((source, index) => (
-                  <div 
-                    key={index}
-                    className="p-2.5 bg-sidebar-bg border border-border-subtle rounded text-[11px]"
-                  >
-                    <div className="flex items-center gap-1.5 text-text-muted font-normal mb-1">
-                      <FileText className="h-3 w-3" />
-                      <span>{source.source}</span>
-                      <span className="text-[8px] bg-card-bg text-text-label px-1.5 py-0.2 rounded border border-border-subtle font-mono ml-auto">
-                        Chunk {index + 1}
-                      </span>
-                    </div>
-                    <p className="text-text-muted font-mono text-[10px] leading-relaxed whitespace-pre-wrap pl-2 border-l border-border-subtle">
-                      {source.text}
-                    </p>
-                  </div>
-                ))}
+        {/* Collapsible Sources Section Content */}
+        {sources && sources.length > 0 && sourcesOpen && (
+          <div className="mt-2 space-y-1.5 animate-fade-in max-w-2xl">
+            {sources.map((source, index) => (
+              <div 
+                key={index}
+                className="p-2.5 bg-sidebar-bg border border-border-subtle rounded text-[11px]"
+              >
+                <div className="flex items-center gap-1.5 text-text-muted font-normal mb-1">
+                  <FileText className="h-3 w-3" />
+                  <span>{source.source}</span>
+                  <span className="text-[8px] bg-card-bg text-text-label px-1.5 py-0.2 rounded border border-border-subtle font-mono ml-auto">
+                    Chunk {index + 1}
+                  </span>
+                </div>
+                <p className="text-text-muted font-mono text-[10px] leading-relaxed whitespace-pre-wrap pl-2 border-l border-border-subtle">
+                  {source.text}
+                </p>
               </div>
-            )}
+            ))}
           </div>
         )}
 
