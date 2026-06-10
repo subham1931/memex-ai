@@ -116,9 +116,30 @@ def query_documents(question: str, user_id: str, n_results: int = 3) -> list[dic
             
     return chunks
 
+FALLBACK_MODELS = [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite", 
+    "gemini-1.5-flash-latest"
+]
+
+def get_gemini_response(prompt, system_instruction=None):
+    for model_name in FALLBACK_MODELS:
+        try:
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            if "404" in str(e):
+                continue
+            raise e
+    raise Exception("All Gemini models failed")
+
 def ask_gemini(question: str, context_chunks: list[dict]) -> str:
     """
-    Queries Gemini 3.5 Flash using context chunks and strict system instructions.
+    Queries Gemini using context chunks and strict system instructions with fallback models.
     """
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
         return "Error: Gemini API Key is not configured. Please add your GEMINI_API_KEY to the backend/.env file."
@@ -195,14 +216,8 @@ TONE:
 """
     
     try:
-        model = genai.GenerativeModel(
-            model_name="gemini-3.5-flash",
-            system_instruction=system_instruction
-        )
-        
         prompt = f"Context:\n{context_str}\n\nUser Question: {question}"
-        response = model.generate_content(prompt)
-        return response.text
+        return get_gemini_response(prompt, system_instruction)
     except Exception as e:
         return f"Error communicating with Gemini API: {str(e)}"
 
