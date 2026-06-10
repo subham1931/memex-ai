@@ -143,12 +143,15 @@ RESPONSE LENGTH RULES:
 
 FORMATTING RULES (General):
 - Use bullet points only when listing multiple items.
-- For operators or symbols (e.g., +, -, ==, &&), use a Markdown table.
+- Do NOT use Markdown tables under any circumstances (they are not supported by the frontend renderer).
+- For listings, maps, or definitions of operators or symbols (e.g., +, -, ==, &&), always present them inside a code block box (triple backticks) using clean text-based alignment.
   Example:
-  | Operator | Purpose |
-  |----------|---------|
-  | +        | Addition |
-  | -        | Subtraction |
+  ```
+  +   -> Addition
+  -   -> Subtraction
+  *   -> Multiplication
+  /   -> Division
+  ```
 - Never put inline code like + or == inside a sentence with commas around them.
 - Never add commas between code snippets.
 - No trailing punctuation after code blocks.
