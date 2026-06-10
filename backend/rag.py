@@ -122,7 +122,7 @@ def get_llm_response(prompt, system_instruction=None):
     messages.append({"role": "user", "content": prompt})
     
     response = client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="llama-3.3-70b-versatile",
         messages=messages,
         max_tokens=1000
     )
