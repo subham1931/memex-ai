@@ -58,6 +58,29 @@ async def get_current_user(authorization: str = Header(None)):
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
+# Dependency to create a request-scoped Supabase client authenticated with the user's JWT
+def get_supabase_client(authorization: str = Header(None)) -> Client:
+    if not supabase_url or not supabase_key or supabase_url == "your_supabase_project_url":
+        raise HTTPException(
+            status_code=500, 
+            detail="Supabase client is not configured on the server. Please check your backend/.env variables."
+        )
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header is missing.")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid authorization scheme. Must use 'Bearer <JWT>'."
+        )
+    token = authorization.replace("Bearer ", "")
+    try:
+        # Create request-scoped client
+        client = create_client(supabase_url, supabase_key)
+        client.postgrest.auth(token)
+        return client
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize authenticated Supabase client: {str(e)}")
+
 class AskRequest(BaseModel):
     question: str
 
@@ -175,15 +198,13 @@ async def delete_file(filename: str, user = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Failed to delete file '{filename}': {str(e)}")
 
 @app.post("/sessions")
-async def create_session(request: SessionCreate = None, user = Depends(get_current_user)):
+async def create_session(request: SessionCreate = None, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Creates a new chat session linked to the authenticated user.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     title = request.title if request else "New Chat"
     try:
-        res = supabase.table("sessions").insert({"title": title, "user_id": user.id}).execute()
+        res = db.table("sessions").insert({"title": title, "user_id": user.id}).execute()
         if res.data:
             return res.data[0]
         raise HTTPException(status_code=500, detail="Failed to create session in Supabase.")
@@ -191,32 +212,28 @@ async def create_session(request: SessionCreate = None, user = Depends(get_curre
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.get("/sessions")
-async def list_sessions(user = Depends(get_current_user)):
+async def list_sessions(user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Lists all sessions owned by the authenticated user.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
-        res = supabase.table("sessions").select("*").eq("user_id", user.id).order("updated_at", desc=True).execute()
+        res = db.table("sessions").select("*").eq("user_id", user.id).order("updated_at", desc=True).execute()
         return res.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.get("/sessions/{id}/messages")
-async def list_session_messages(id: str, user = Depends(get_current_user)):
+async def list_session_messages(id: str, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Lists messages within a session, confirming session ownership.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
         # Ensure session ownership
-        session_check = supabase.table("sessions").select("user_id").eq("id", id).execute()
+        session_check = db.table("sessions").select("user_id").eq("id", id).execute()
         if not session_check.data or session_check.data[0]["user_id"] != user.id:
             raise HTTPException(status_code=403, detail="Forbidden: You do not own this session.")
             
-        res = supabase.table("messages").select("*").eq("session_id", id).eq("user_id", user.id).order("created_at", desc=False).execute()
+        res = db.table("messages").select("*").eq("session_id", id).eq("user_id", user.id).order("created_at", desc=False).execute()
         return res.data
     except HTTPException as he:
         raise he
@@ -224,15 +241,13 @@ async def list_session_messages(id: str, user = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.post("/sessions/{id}/messages")
-async def save_session_message(id: str, msg: MessageSave, user = Depends(get_current_user)):
+async def save_session_message(id: str, msg: MessageSave, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Saves a chat message in a session, verifying ownership and updating timestamp.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
         # Ensure session ownership
-        session_check = supabase.table("sessions").select("user_id").eq("id", id).execute()
+        session_check = db.table("sessions").select("user_id").eq("id", id).execute()
         if not session_check.data or session_check.data[0]["user_id"] != user.id:
             raise HTTPException(status_code=403, detail="Forbidden: You do not own this session.")
             
@@ -243,12 +258,12 @@ async def save_session_message(id: str, msg: MessageSave, user = Depends(get_cur
             "sources": msg.sources,
             "user_id": user.id
         }
-        res = supabase.table("messages").insert(insert_data).execute()
+        res = db.table("messages").insert(insert_data).execute()
         
         # Touch session updated_at
         import datetime
         now_iso = datetime.datetime.utcnow().isoformat()
-        supabase.table("sessions").update({"updated_at": now_iso}).eq("id", id).eq("user_id", user.id).execute()
+        db.table("sessions").update({"updated_at": now_iso}).eq("id", id).eq("user_id", user.id).execute()
         
         if res.data:
             return res.data[0]
@@ -259,28 +274,24 @@ async def save_session_message(id: str, msg: MessageSave, user = Depends(get_cur
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.delete("/sessions/{id}")
-async def delete_session(id: str, user = Depends(get_current_user)):
+async def delete_session(id: str, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Deletes a session owned by the authenticated user.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
         # Cascade delete is enabled on foreign keys, so messages delete automatically
-        res = supabase.table("sessions").delete().eq("id", id).eq("user_id", user.id).execute()
+        res = db.table("sessions").delete().eq("id", id).eq("user_id", user.id).execute()
         return {"status": "success", "message": "Session and its messages deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.patch("/sessions/{id}/title")
-async def update_session_title(id: str, patch: TitlePatch, user = Depends(get_current_user)):
+async def update_session_title(id: str, patch: TitlePatch, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Renames a session owned by the authenticated user.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
-        res = supabase.table("sessions").update({"title": patch.title}).eq("id", id).eq("user_id", user.id).execute()
+        res = db.table("sessions").update({"title": patch.title}).eq("id", id).eq("user_id", user.id).execute()
         if res.data:
             return res.data[0]
         raise HTTPException(status_code=404, detail="Session not found or not owned by user.")
@@ -288,14 +299,12 @@ async def update_session_title(id: str, patch: TitlePatch, user = Depends(get_cu
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.patch("/messages/{message_id}")
-async def update_message(message_id: str, patch: MessageUpdate, user = Depends(get_current_user)):
+async def update_message(message_id: str, patch: MessageUpdate, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Updates a message's content if owned by the user.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
-        res = supabase.table("messages").update({"content": patch.content}).eq("id", message_id).eq("user_id", user.id).execute()
+        res = db.table("messages").update({"content": patch.content}).eq("id", message_id).eq("user_id", user.id).execute()
         if res.data:
             return res.data[0]
         raise HTTPException(status_code=404, detail="Message not found or not owned by user.")
@@ -303,15 +312,13 @@ async def update_message(message_id: str, patch: MessageUpdate, user = Depends(g
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.delete("/messages/{message_id}/subsequent")
-async def delete_subsequent_messages(message_id: str, user = Depends(get_current_user)):
+async def delete_subsequent_messages(message_id: str, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):
     """
     Deletes all messages in the same session that were created after the target message.
     """
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Supabase client is not configured.")
     try:
         # 1. Get the target message details (created_at, session_id)
-        msg_check = supabase.table("messages").select("created_at", "session_id").eq("id", message_id).eq("user_id", user.id).execute()
+        msg_check = db.table("messages").select("created_at", "session_id").eq("id", message_id).eq("user_id", user.id).execute()
         if not msg_check.data:
             raise HTTPException(status_code=404, detail="Target message not found or not owned by user.")
         
@@ -319,12 +326,12 @@ async def delete_subsequent_messages(message_id: str, user = Depends(get_current
         session_id = msg_check.data[0]["session_id"]
         
         # 2. Delete all messages created_at > target_created_at in the same session
-        res = supabase.table("messages").delete().eq("session_id", session_id).eq("user_id", user.id).gt("created_at", target_created_at).execute()
+        res = db.table("messages").delete().eq("session_id", session_id).eq("user_id", user.id).gt("created_at", target_created_at).execute()
         
         # 3. Touch session updated_at
         import datetime
         now_iso = datetime.datetime.utcnow().isoformat()
-        supabase.table("sessions").update({"updated_at": now_iso}).eq("id", session_id).eq("user_id", user.id).execute()
+        db.table("sessions").update({"updated_at": now_iso}).eq("id", session_id).eq("user_id", user.id).execute()
         
         return {"status": "success", "deleted_count": len(res.data) if res.data else 0}
     except HTTPException as he:
