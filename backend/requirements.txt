@@ -8,3 +8,4 @@ python-multipart==0.0.9
 pypdf==4.2.0
 supabase==2.5.1
 python-jose==3.3.0
+numpy<2.0.0

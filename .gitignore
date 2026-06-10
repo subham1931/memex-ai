@@ -24,3 +24,9 @@ frontend/dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Virtual environments and temporary files
+backend/venv/
+chroma_db/
+scratch/
+

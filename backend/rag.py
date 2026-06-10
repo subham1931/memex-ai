@@ -152,7 +152,7 @@ TONE: Smart, direct, helpful. Like a knowledgeable friend, not a textbook.
     
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.5-flash",
             system_instruction=system_instruction
         )
         
