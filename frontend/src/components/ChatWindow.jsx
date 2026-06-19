@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
-import { Send, Plus, Loader2, Sun, Moon } from 'lucide-react';
+import { Send, Plus, Loader2, Sun, Moon, Menu } from 'lucide-react';
 
 export default function ChatWindow({ 
   messages, 
@@ -11,7 +11,8 @@ export default function ChatWindow({
   onUpload,
   uploading,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  onOpenSidebar
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -62,7 +63,7 @@ export default function ChatWindow({
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 bg-app-bg text-text-primary transition-colors duration-150">
-      {/* Hidden file input for top-bar button */}
+      {/* Hidden file input */}
       <input
         type="file"
         ref={fileInputRef}
@@ -71,51 +72,64 @@ export default function ChatWindow({
         className="hidden"
       />
 
-      {/* Top Status Bar */}
-      <div className="h-12 border-b border-border-subtle px-6 flex items-center justify-between bg-app-bg shrink-0 select-none transition-colors duration-150">
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 w-1.5 rounded-full bg-success" />
-          <span className="text-[11px] font-normal text-text-muted">Vector store ready</span>
+      {/* Top Navbar */}
+      <div className="h-14 border-b border-border-subtle px-3 sm:px-4 md:px-6 flex items-center justify-between bg-app-bg shrink-0 select-none transition-colors duration-150">
+        {/* Left side */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Hamburger - mobile only */}
+          <button
+            onClick={onOpenSidebar}
+            className="h-8 w-8 rounded-md hover:bg-item-hover text-text-muted hover:text-text-primary transition-all cursor-pointer border-none bg-transparent flex items-center justify-center outline-none md:hidden"
+            title="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+            <span className="text-[11px] font-normal text-text-muted hidden sm:inline">Vector store ready</span>
+          </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        {/* Right side */}
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onToggleTheme}
-            className="p-1.5 rounded-md hover:bg-item-hover text-text-muted hover:text-text-primary transition-all cursor-pointer border-none bg-transparent flex items-center justify-center outline-none"
+            className="h-8 w-8 rounded-md hover:bg-item-hover text-text-muted hover:text-text-primary transition-all cursor-pointer border-none bg-transparent flex items-center justify-center outline-none"
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
           >
-            {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-purple-600" />}
+            {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-purple-500" />}
           </button>
 
           <button
             onClick={triggerUpload}
             disabled={uploading}
-            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none p-0 outline-none"
+            className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border border-border-subtle hover:border-border-focus rounded-md px-2 sm:px-3 py-1.5 outline-none"
           >
             {uploading ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <Plus className="h-3.5 w-3.5" />
             )}
-            <span>{uploading ? 'Upload notes' : 'Upload notes'}</span>
+            <span className="hidden sm:inline">{uploading ? 'Uploading...' : 'Upload'}</span>
           </button>
         </div>
       </div>
 
       {/* Messages Feed */}
-      <div className="flex-1 overflow-y-auto px-6 py-8 min-h-0">
+      <div className="flex-1 overflow-y-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8 min-h-0">
         {messages.length === 0 ? (
-          <div className="max-w-2xl mx-auto h-full flex flex-col justify-center text-left space-y-6">
+          <div className="max-w-2xl mx-auto h-full flex flex-col justify-center text-left space-y-4 sm:space-y-6 px-2">
             <div className="space-y-1">
               <span className="text-[9px] uppercase tracking-[0.2em] text-text-muted font-semibold">
                 MEMEX INTELLIGENCE
               </span>
-              <h2 className="text-xl font-normal text-text-primary tracking-tight">
+              <h2 className="text-lg sm:text-xl font-normal text-text-primary tracking-tight">
                 What would you like to know?
               </h2>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-normal text-text-label bg-sidebar-bg border border-border-subtle px-2.5 py-1 rounded-full">
                 Note Search
               </span>
@@ -125,7 +139,7 @@ export default function ChatWindow({
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
             {messages.map((msg, index) => (
               <MessageBubble 
                 key={msg.id || index} 
@@ -159,7 +173,7 @@ export default function ChatWindow({
       </div>
 
       {/* Input Form Footer */}
-      <div className="p-4 md:p-6 shrink-0 bg-app-bg transition-colors duration-150">
+      <div className="p-3 sm:p-4 md:p-6 shrink-0 bg-app-bg transition-colors duration-150">
         <div className="max-w-3xl mx-auto">
           <div className="relative flex items-end bg-input-bg border border-border-subtle rounded-lg focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all p-1.5 gap-2">
             <textarea
@@ -168,9 +182,9 @@ export default function ChatWindow({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={hasFiles ? "Ask a question about your notes..." : "Upload notes to start querying..."}
+              placeholder={hasFiles ? "Ask about your notes..." : "Upload notes to start..."}
               disabled={!hasFiles || loading}
-              className="flex-1 resize-none bg-transparent outline-none border-none py-1.5 px-2.5 text-sm text-text-primary placeholder-text-muted max-h-40 min-h-[36px] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 resize-none bg-transparent outline-none border-none py-1.5 px-2 sm:px-2.5 text-sm text-text-primary placeholder-text-muted max-h-40 min-h-[36px] font-sans disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               onClick={handleSend}
@@ -180,7 +194,7 @@ export default function ChatWindow({
               <Send className="h-3.5 w-3.5" />
             </button>
           </div>
-          <p className="text-center text-[10px] text-text-muted mt-2">
+          <p className="text-center text-[10px] text-text-muted mt-2 hidden sm:block">
             Memex answers from your notes only
           </p>
         </div>

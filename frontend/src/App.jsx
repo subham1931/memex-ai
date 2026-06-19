@@ -23,6 +23,9 @@ export default function App() {
     return localStorage.getItem('theme') || 'dark';
   });
 
+  // Mobile sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   // Apply theme to document element
   useEffect(() => {
     const root = document.documentElement;
@@ -518,18 +521,20 @@ export default function App() {
         onClearChat={handleClearChat}
         user={user}
         onSignOut={handleSignOut}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       {/* Main chat window container */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
         {error && (
-          <div className="bg-red-950/40 border-b border-red-900/50 text-red-300 text-xs px-6 py-2.5 flex items-center justify-between">
-            <span className="font-medium">{error}</span>
+          <div className="bg-red-950/40 border-b border-red-900/50 text-red-300 text-xs px-4 sm:px-6 py-2.5 flex items-center justify-between gap-2">
+            <span className="font-medium text-[11px] sm:text-xs truncate">{error}</span>
             <button 
               onClick={fetchFiles}
-              className="bg-red-900/40 hover:bg-red-900/60 active:bg-red-900 px-3 py-1 rounded transition-colors text-[10px] font-semibold tracking-wide uppercase cursor-pointer"
+              className="bg-red-900/40 hover:bg-red-900/60 active:bg-red-900 px-3 py-1 rounded transition-colors text-[10px] font-semibold tracking-wide uppercase cursor-pointer shrink-0"
             >
-              Retry Connection
+              Retry
             </button>
           </div>
         )}
@@ -544,6 +549,7 @@ export default function App() {
           uploading={uploading}
           theme={theme}
           onToggleTheme={toggleTheme}
+          onOpenSidebar={() => setSidebarOpen(true)}
         />
       </div>
     </div>

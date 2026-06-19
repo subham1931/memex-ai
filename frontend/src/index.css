@@ -74,21 +74,16 @@ body {
   color: var(--color-text-primary);
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  height: 100%;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 html {
-  height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
 }
 
 #root {
-  height: 100%;
-  overflow: hidden;
+  min-height: 100vh;
 }
 
 /* Custom scrollbar to match the minimal developer aesthetic */

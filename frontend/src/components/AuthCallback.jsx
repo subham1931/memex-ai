@@ -14,7 +14,7 @@ export default function AuthCallback() {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (session) {
-          navigate('/', { replace: true });
+          navigate('/app', { replace: true });
         } else if (error) {
           throw error;
         } else {
@@ -22,7 +22,7 @@ export default function AuthCallback() {
           const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((event, session) => {
             if (session) {
               sub.unsubscribe();
-              navigate('/', { replace: true });
+              navigate('/app', { replace: true });
             }
           });
           subscription = sub;

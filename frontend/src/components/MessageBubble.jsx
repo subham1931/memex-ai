@@ -48,7 +48,7 @@ export default function MessageBubble({ message, onEditMessage, loading }) {
     if (isEditing) {
       return (
         <div className="flex flex-col items-end w-full py-2 select-none">
-          <div className="w-full max-w-[65%] bg-input-bg border border-accent rounded-[8px] p-3 flex flex-col gap-3.5 shadow-md">
+          <div className="w-full max-w-[85%] sm:max-w-[75%] md:max-w-[65%] bg-input-bg border border-accent rounded-[8px] p-3 flex flex-col gap-3.5 shadow-md">
             <textarea
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
@@ -79,13 +79,13 @@ export default function MessageBubble({ message, onEditMessage, loading }) {
 
     return (
       <div className="flex flex-col items-end w-full group py-1">
-        <div className="relative bg-message-user-bg border border-message-user-border rounded-[8px] px-3.5 py-2.5 max-w-[65%] text-text-primary text-[13px] leading-relaxed shadow-sm transition-colors duration-150">
+        <div className="relative bg-message-user-bg border border-message-user-border rounded-[8px] px-3.5 py-2.5 max-w-[85%] sm:max-w-[75%] md:max-w-[65%] text-text-primary text-[13px] leading-relaxed shadow-sm transition-colors duration-150">
           <p className="whitespace-pre-wrap">{text}</p>
-          <span className="absolute -left-12 top-3 text-[9px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
+          <span className="absolute -left-12 top-3 text-[9px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none hidden sm:block">
             {time}
           </span>
         </div>
-        <div className="mt-1 mr-1 flex items-center justify-end gap-2.5 max-w-[65%] opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
+        <div className="mt-1 mr-1 flex items-center justify-end gap-2.5 max-w-[85%] sm:max-w-[75%] md:max-w-[65%] opacity-0 group-hover:opacity-100 transition-opacity duration-150 select-none">
           {id && !loading && (
             <button
               onClick={() => setIsEditing(true)}
