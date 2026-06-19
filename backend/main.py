@@ -2,25 +2,27 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
+import datetime
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from supabase import create_client, Client
 
-# Initialize Supabase client
+# Initialize Supabase client (service role for auth verification)
 supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
-supabase: Optional[Client] = None
+supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+supabase_anon_key = os.getenv("SUPABASE_ANON_KEY") or supabase_service_key
+supabase_client: Optional[Client] = None
 
-if supabase_url and supabase_key and supabase_url != "your_supabase_project_url":
+if supabase_url and supabase_service_key and supabase_url != "your_supabase_project_url":
     try:
-        supabase = create_client(supabase_url, supabase_key)
+        supabase_client = create_client(supabase_url, supabase_service_key)
     except Exception as e:
         print(f"Warning: Failed to initialize Supabase client: {str(e)}")
 
 # Import RAG pipeline functions
-from rag import add_document, query_documents, ask_gemini, get_uploaded_files, delete_document
+from rag import add_document, query_documents, ask_llm, get_uploaded_files, delete_document
 
 app = FastAPI(title="Memex-AI API", description="Personal Notes Assistant RAG API")
 
@@ -35,7 +37,7 @@ app.add_middleware(
 
 # Auth dependency to verify Supabase JWT
 async def get_current_user(authorization: str = Header(None)):
-    if not supabase:
+    if not supabase_client:
         raise HTTPException(
             status_code=500, 
             detail="Supabase client is not configured on the server. Please check your backend/.env variables."
@@ -51,7 +53,7 @@ async def get_current_user(authorization: str = Header(None)):
     token = authorization.replace("Bearer ", "")
     try:
         # Fetch user profile using token from Supabase
-        user_response = supabase.auth.get_user(token)
+        user_response = supabase_client.auth.get_user(token)
         if not user_response or not user_response.user:
             raise HTTPException(status_code=401, detail="Invalid or expired session token.")
         return user_response.user
@@ -60,7 +62,7 @@ async def get_current_user(authorization: str = Header(None)):
 
 # Dependency to create a request-scoped Supabase client authenticated with the user's JWT
 def get_supabase_client(authorization: str = Header(None)) -> Client:
-    if not supabase_url or not supabase_key or supabase_url == "your_supabase_project_url":
+    if not supabase_url or not supabase_anon_key or supabase_url == "your_supabase_project_url":
         raise HTTPException(
             status_code=500, 
             detail="Supabase client is not configured on the server. Please check your backend/.env variables."
@@ -74,8 +76,8 @@ def get_supabase_client(authorization: str = Header(None)) -> Client:
         )
     token = authorization.replace("Bearer ", "")
     try:
-        # Create request-scoped client
-        client = create_client(supabase_url, supabase_key)
+        # Create request-scoped client with anon key + user JWT for RLS
+        client = create_client(supabase_url, supabase_anon_key)
         client.postgrest.auth(token)
         return client
     except Exception as e:
@@ -83,6 +85,7 @@ def get_supabase_client(authorization: str = Header(None)) -> Client:
 
 class AskRequest(BaseModel):
     question: str
+    history: Optional[List[dict]] = None
 
 class SessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
@@ -102,7 +105,7 @@ class MessageUpdate(BaseModel):
 async def upload_file(file: UploadFile = File(...), user = Depends(get_current_user)):
     """
     Accepts .md, .txt, and .pdf files, chunks them, embeds with sentence-transformers,
-    and stores them in ChromaDB, isolated by user_id.
+    and stores them in Supabase (Storage + pgvector), isolated by user_id.
     """
     filename = file.filename
     if not filename:
@@ -113,9 +116,14 @@ async def upload_file(file: UploadFile = File(...), user = Depends(get_current_u
             status_code=400, 
             detail="Unsupported file format. Only .txt, .md, and .pdf files are allowed."
         )
+
+    # Enforce max file size (10MB)
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
         
     try:
         content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="File too large. Maximum allowed size is 10MB.")
         if filename.endswith(".pdf"):
             import io
             from pypdf import PdfReader
@@ -140,7 +148,7 @@ async def upload_file(file: UploadFile = File(...), user = Depends(get_current_u
         
     # Process through RAG pipeline, passing user.id
     try:
-        result = add_document(filename, text_content, user.id)
+        result = add_document(filename, text_content, user.id, content)
         return {
             "filename": filename,
             "status": result["status"],
@@ -153,8 +161,9 @@ async def upload_file(file: UploadFile = File(...), user = Depends(get_current_u
 @app.post("/ask")
 async def ask_question(request: AskRequest, user = Depends(get_current_user)):
     """
-    Takes a question, retrieves top 3 relevant chunks from ChromaDB (filtered by user_id),
-    submits them with context to Gemini 1.5 Flash, and returns the answer with sources.
+    Takes a question, retrieves top 3 relevant chunks via pgvector similarity search
+    (filtered by user_id), submits them with context to Groq LLM, and returns the
+    answer with sources.
     """
     question = request.question.strip()
     if not question:
@@ -164,8 +173,8 @@ async def ask_question(request: AskRequest, user = Depends(get_current_user)):
         # Retrieve top 3 relevant chunks, passing user.id
         context_chunks = query_documents(question, user.id, n_results=3)
         
-        # Get Gemini's answer
-        answer = ask_gemini(question, context_chunks)
+        # Get LLM's answer with conversation history
+        answer = ask_llm(question, context_chunks, history=request.history)
         
         return {
             "answer": answer,
@@ -177,7 +186,7 @@ async def ask_question(request: AskRequest, user = Depends(get_current_user)):
 @app.get("/files")
 async def list_files(user = Depends(get_current_user)):
     """
-    Returns list of all unique uploaded files in ChromaDB, filtered by user_id.
+    Returns list of all unique uploaded files, filtered by user_id.
     """
     try:
         files = get_uploaded_files(user.id)
@@ -188,7 +197,7 @@ async def list_files(user = Depends(get_current_user)):
 @app.delete("/files/{filename}")
 async def delete_file(filename: str, user = Depends(get_current_user)):
     """
-    Removes file and its chunks from ChromaDB, filtered by user_id.
+    Removes file and its chunks from Supabase, filtered by user_id.
     """
     try:
         # Delete document from DB, passing user.id
@@ -261,7 +270,6 @@ async def save_session_message(id: str, msg: MessageSave, user = Depends(get_cur
         res = db.table("messages").insert(insert_data).execute()
         
         # Touch session updated_at
-        import datetime
         now_iso = datetime.datetime.utcnow().isoformat()
         db.table("sessions").update({"updated_at": now_iso}).eq("id", id).eq("user_id", user.id).execute()
         
@@ -329,7 +337,6 @@ async def delete_subsequent_messages(message_id: str, user = Depends(get_current
         res = db.table("messages").delete().eq("session_id", session_id).eq("user_id", user.id).gt("created_at", target_created_at).execute()
         
         # 3. Touch session updated_at
-        import datetime
         now_iso = datetime.datetime.utcnow().isoformat()
         db.table("sessions").update({"updated_at": now_iso}).eq("id", session_id).eq("user_id", user.id).execute()
         

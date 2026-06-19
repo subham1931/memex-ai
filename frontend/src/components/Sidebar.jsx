@@ -12,6 +12,7 @@ export default function Sidebar({
   onDeleteSession,
   onRenameSession,
   onCreateSession,
+  onClearChat,
   user,
   onSignOut
 }) {
@@ -103,7 +104,7 @@ export default function Sidebar({
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
   return (
-    <div className="w-[280px] min-w-[280px] bg-sidebar-bg border-r border-border-subtle flex flex-col h-full text-text-primary select-none transition-colors duration-150">
+    <div className="w-[280px] min-w-[280px] bg-sidebar-bg border-r border-border-subtle flex flex-col h-full min-h-0 text-text-primary select-none transition-colors duration-150">
       {/* App Branding */}
       <div className="p-5 flex flex-col gap-0.5 border-b border-border-subtle">
         <h1 className="text-sm font-medium tracking-tight text-text-primary">
@@ -126,7 +127,7 @@ export default function Sidebar({
       </div>
 
       {/* Recents Chat Sessions History */}
-      <div className="flex-1 overflow-y-auto px-2 py-4 border-b border-border-subtle flex flex-col gap-4">
+      <div className="flex-1 overflow-y-auto px-2 py-4 border-b border-border-subtle flex flex-col gap-4 min-h-0">
         <div className="px-3 flex items-center justify-between">
           <span className="text-[9px] uppercase tracking-[0.15em] text-text-label font-semibold">
             Recents
@@ -311,7 +312,7 @@ export default function Sidebar({
       <div className="p-4 bg-sidebar-bg border-t border-border-subtle flex flex-col gap-3 shrink-0">
         <div className="flex items-center justify-between">
           <button
-            onClick={() => activeSession && handleDeleteClick(activeSession.id)}
+            onClick={() => activeSession && onClearChat(activeSession.id)}
             disabled={!activeSession}
             className="text-xs text-text-muted hover:text-text-primary font-normal transition-colors duration-150 bg-transparent border-none p-0 cursor-pointer text-left disabled:opacity-30 disabled:cursor-not-allowed"
           >

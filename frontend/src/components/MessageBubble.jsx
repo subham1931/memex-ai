@@ -3,13 +3,18 @@ import ReactMarkdown from 'react-markdown';
 import { FileText, ChevronDown, ChevronUp, Copy, Check, Edit, X, Save } from 'lucide-react';
 
 export default function MessageBubble({ message, onEditMessage, loading }) {
-  const { id, role, text, sources } = message;
+  const { id, role, text, sources, created_at } = message;
   const isAssistant = role === 'assistant';
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(text);
-  const [time] = useState(() => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  const [time] = useState(() => {
+    if (created_at) {
+      return new Date(created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  });
 
   useEffect(() => {
     setEditText(text);
@@ -129,8 +134,9 @@ export default function MessageBubble({ message, onEditMessage, loading }) {
               h1: ({ children }) => <h1 className="text-sm font-medium text-text-primary mt-3 mb-1">{children}</h1>,
               h2: ({ children }) => <h2 className="text-xs font-medium text-text-primary mt-2 mb-1">{children}</h2>,
               h3: ({ children }) => <h3 className="text-[11px] font-medium text-text-primary mt-1.5 mb-0.5">{children}</h3>,
-              code: ({ inline, children, ...props }) => {
-                return inline ? (
+              code: ({ children, className, node, ...props }) => {
+                const isInline = !className && !String(children).includes('\n');
+                return isInline ? (
                   <code className="bg-card-bg border border-border-subtle text-accent px-1 py-0.2 rounded text-[11px] font-mono" {...props}>
                     {children}
                   </code>

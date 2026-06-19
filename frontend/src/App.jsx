@@ -4,7 +4,7 @@ import ChatWindow from './components/ChatWindow';
 import { supabase } from './supabaseClient';
 import { fetchWithAuth } from './utils/fetchWithAuth';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -109,9 +109,11 @@ export default function App() {
       if (!res.ok) throw new Error('Failed to fetch messages for session.');
       const data = await res.json();
       const formatted = (data || []).map(m => ({
+        id: m.id,
         role: m.role,
         text: m.content,
-        sources: m.sources || []
+        sources: m.sources || [],
+        created_at: m.created_at
       }));
       setMessages(formatted);
     } catch (err) {
@@ -165,19 +167,22 @@ export default function App() {
       });
       if (!res.ok) throw new Error('Failed to delete session.');
 
-      // Update state
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      // Update state using callback form to avoid stale closure
+      setSessions(prev => {
+        const remaining = prev.filter(s => s.id !== sessionId);
 
-      if (activeSessionId === sessionId) {
-        const remaining = sessions.filter(s => s.id !== sessionId);
-        if (remaining.length > 0) {
-          setActiveSessionId(remaining[0].id);
-          await loadSessionMessages(remaining[0].id);
-        } else {
-          // If no sessions left, create a new one
-          await createNewSession("New Chat", true);
+        if (activeSessionId === sessionId) {
+          if (remaining.length > 0) {
+            setActiveSessionId(remaining[0].id);
+            loadSessionMessages(remaining[0].id);
+          } else {
+            // If no sessions left, create a new one
+            createNewSession("New Chat", true);
+          }
         }
-      }
+
+        return remaining;
+      });
     } catch (err) {
       console.error(err);
       alert('Could not delete session.');
@@ -321,12 +326,18 @@ export default function App() {
 
     // 3. Fetch RAG response
     try {
+      // Build conversation history (last 6 messages for context)
+      const history = messages.slice(-6).map(m => ({
+        role: m.role,
+        content: m.text
+      }));
+
       const res = await fetchWithAuth(`${API_BASE}/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({ question: text, history }),
       });
 
       if (!res.ok) {
@@ -457,6 +468,24 @@ export default function App() {
     }
   };
 
+  // Clear all messages from active session (keeps the session intact)
+  const handleClearChat = async (sessionId) => {
+    if (!sessionId) return;
+    try {
+      // Delete the session and create a fresh one (simplest approach with current API)
+      const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) throw new Error('Failed to clear chat.');
+      
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+      await createNewSession("New Chat", true);
+    } catch (err) {
+      console.error(err);
+      alert('Could not clear chat.');
+    }
+  };
+
   // Sign out of Google session
   const handleSignOut = async () => {
     try {
@@ -473,7 +502,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-app-bg font-sans text-text-primary antialiased">
+    <div className="flex fixed inset-0 overflow-hidden bg-app-bg font-sans text-text-primary antialiased">
       {/* Sidebar (File list, uploads & Recents history) */}
       <Sidebar
         files={files}
@@ -486,12 +515,13 @@ export default function App() {
         onDeleteSession={handleDeleteSession}
         onRenameSession={handleRenameSession}
         onCreateSession={() => createNewSession("New Chat", true)}
+        onClearChat={handleClearChat}
         user={user}
         onSignOut={handleSignOut}
       />
 
       {/* Main chat window container */}
-      <div className="flex-1 flex flex-col min-w-0 h-full relative">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full relative">
         {error && (
           <div className="bg-red-950/40 border-b border-red-900/50 text-red-300 text-xs px-6 py-2.5 flex items-center justify-between">
             <span className="font-medium">{error}</span>

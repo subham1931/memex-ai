@@ -1,29 +1,30 @@
 import os
-import chromadb
 from sentence_transformers import SentenceTransformer
 from groq import Groq
+from supabase import create_client, Client
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv(override=True)
 
 # Initialize Groq client
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Set DB Path
-DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+# Initialize Supabase client (service role - bypasses RLS for server-side operations)
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+supabase_client: Client = None
+
+if supabase_url and supabase_key:
+    try:
+        supabase_client = create_client(supabase_url, supabase_key)
+    except Exception as e:
+        print(f"Warning: Failed to initialize Supabase client in rag.py: {str(e)}")
 
 # Initialize SentenceTransformer model (all-MiniLM-L6-v2)
 print("Loading sentence-transformers/all-MiniLM-L6-v2 model...")
 embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 print("Model loaded successfully.")
-
-# Initialize ChromaDB Client
-print(f"Connecting to ChromaDB at: {DB_PATH}")
-chroma_client = chromadb.PersistentClient(path=DB_PATH)
-# Get or create collection
-collection = chroma_client.get_or_create_collection(name="memex_notes")
-print("ChromaDB collection initialized.")
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
     """
@@ -49,86 +50,114 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
             
     return chunks
 
-def add_document(filename: str, content: str, user_id: str) -> dict:
+def add_document(filename: str, content: str, user_id: str, raw_content: bytes) -> dict:
     """
-    Chunks document content, embeds each chunk, and stores it in ChromaDB, isolated by user_id.
+    Saves document to Supabase Storage, chunks content, generates embeddings,
+    and indexes them in the public.embeddings and public.documents tables.
     """
-    # Delete existing entries for this file and user to prevent duplicates on re-upload
+    if not supabase_client:
+        raise ValueError("Supabase client is not initialized.")
+
+    # 1. Clean up existing document entries for this user & filename
+    # This will cascade delete related embeddings in public.embeddings
     delete_document(filename, user_id)
+
+    # 2. Upload raw file to Supabase Storage
+    storage_path = f"{user_id}/{filename}"
+    try:
+        # Upload new file.
+        supabase_client.storage.from_("notes").upload(
+            path=storage_path,
+            file=raw_content,
+            file_options={"x-upsert": "true", "content-type": "application/octet-stream"}
+        )
+    except Exception as e:
+        # In case bucket or storage fails, print and retry without file_options
+        try:
+            supabase_client.storage.from_("notes").remove(storage_path)
+        except Exception:
+            pass
+        supabase_client.storage.from_("notes").upload(path=storage_path, file=raw_content)
+
+    # 3. Create document metadata entry
+    doc_res = supabase_client.table("documents").insert({
+        "user_id": user_id,
+        "filename": filename,
+        "file_path": storage_path
+    }).execute()
+
+    if not doc_res.data:
+        raise ValueError("Failed to save document metadata in Supabase.")
     
-    chunks = chunk_text(content)
+    document_id = doc_res.data[0]["id"]
+
+    # 4. Chunk text and generate embeddings
+    chunks = chunk_text(content, chunk_size=500, overlap=50)
     if not chunks:
         return {"status": "empty", "chunks_added": 0}
-        
-    # Generate embeddings
+
     embeddings = embedding_model.encode(chunks).tolist()
-    
-    # Generate unique IDs, documents, and metadata for ChromaDB
-    ids = [f"{user_id}_{filename}_{i}" for i in range(len(chunks))]
-    metadatas = [{"source": filename, "user_id": user_id} for _ in chunks]
-    
-    # Add to collection
-    collection.add(
-        ids=ids,
-        embeddings=embeddings,
-        metadatas=metadatas,
-        documents=chunks
-    )
-    
+
+    # 5. Insert chunks and vector embeddings into Supabase
+    embeddings_data = []
+    for chunk, emb in zip(chunks, embeddings):
+        embeddings_data.append({
+            "user_id": user_id,
+            "document_id": document_id,
+            "content": chunk,
+            "embedding": emb
+        })
+
+    supabase_client.table("embeddings").insert(embeddings_data).execute()
+
     return {"status": "success", "chunks_added": len(chunks)}
 
 def query_documents(question: str, user_id: str, n_results: int = 3) -> list[dict]:
     """
-    Embeds the question, retrieves top n_results relevant chunks from ChromaDB for the specified user_id.
+    Embeds the question, calls public.match_embeddings RPC vector similarity search,
+    and returns top matching chunks with their source file names.
     """
-    if not question.strip():
+    if not question.strip() or not supabase_client:
         return []
-        
-    # Embed question
+
+    # 1. Embed question
     query_embedding = embedding_model.encode(question).tolist()
-    
-    # Check current collection size
-    count = collection.count()
-    if count == 0:
-        return []
-        
-    # n_results cannot be larger than collection size
-    query_n = min(n_results, count)
-    
-    # Query only documents belonging to the user
-    results = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=query_n,
-        where={"user_id": user_id}
-    )
-    
+
+    # 2. Call similarity search RPC function (returns content + filename via join)
+    res = supabase_client.rpc("match_embeddings", {
+        "query_embedding": query_embedding,
+        "match_user_id": user_id,
+        "match_count": n_results
+    }).execute()
+
     chunks = []
-    if results and "documents" in results and results["documents"]:
-        docs = results["documents"][0]
-        metas = results["metadatas"][0] if "metadatas" in results and results["metadatas"] else []
-        for i in range(len(docs)):
-            source = metas[i].get("source", "Unknown") if i < len(metas) else "Unknown"
+    if res.data:
+        for item in res.data:
             chunks.append({
-                "text": docs[i],
-                "source": source
+                "text": item["content"],
+                "source": item.get("filename", "Unknown")
             })
-            
+
     return chunks
 
-def get_llm_response(prompt, system_instruction=None):
+def get_llm_response(prompt, system_instruction=None, history=None):
     messages = []
     if system_instruction:
         messages.append({"role": "system", "content": system_instruction})
+    if history:
+        # Include recent conversation history (last 6 messages max to stay within token limits)
+        for msg in history[-6:]:
+            messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
     messages.append({"role": "user", "content": prompt})
     
-    response = client.chat.completions.create(
+    response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=messages,
         max_tokens=1000
     )
     return response.choices[0].message.content
 
-def ask_gemini(question: str, context_chunks: list[dict]) -> str:
+def ask_llm(question: str, context_chunks: list[dict], history: list[dict] = None) -> str:
     """
     Queries LLM (via Groq) using context chunks and strict system instructions.
     """
@@ -148,9 +177,9 @@ You are Memex, a smart personal notes assistant. Answer questions based ONLY on 
 
 RESPONSE LENGTH RULES:
 - Match answer length to question complexity.
-- Simple question → 2-3 sentences, direct.
-- Explanation question → medium length with details.
-- Summary question → full detailed answer with sections.
+- Simple question -> 2-3 sentences, direct.
+- Explanation question -> medium length with details.
+- Summary question -> full detailed answer with sections.
 - Never cut off mid-answer.
 
 FORMATTING RULES (General):
@@ -167,7 +196,7 @@ FORMATTING RULES (General):
 - Never put inline code like + or == inside a sentence with commas around them.
 - Never add commas between code snippets.
 - No trailing punctuation after code blocks.
-- For short answers → plain conversational text only.
+- For short answers -> plain conversational text only.
 
 CODE BLOCKS & CODE SNIPPET DETERMINATION (CRITICAL):
 - GUIDING PRINCIPLE: You must dynamically evaluate whether an element represents functional, executable, or syntax-based information (which belongs in a code block box) versus descriptive or conversational natural language (which does not). Use your judgment to prevent unnecessary clutter.
@@ -208,34 +237,40 @@ TONE:
     
     try:
         prompt = f"Context:\n{context_str}\n\nUser Question: {question}"
-        return get_llm_response(prompt, system_instruction)
+        return get_llm_response(prompt, system_instruction, history=history)
     except Exception as e:
-        return f"Error communicating with Gemini API: {str(e)}"
+        return f"Error communicating with Groq LLM API: {str(e)}"
 
 def get_uploaded_files(user_id: str) -> list[str]:
     """
-    Returns unique list of filenames uploaded to ChromaDB by the specified user_id.
+    Returns unique list of filenames uploaded to Supabase by the specified user_id.
     """
-    data = collection.get(where={"user_id": user_id}, include=["metadatas"])
-    metadatas = data.get("metadatas", [])
-    
-    files = set()
-    for meta in metadatas:
-        if meta and "source" in meta:
-            files.add(meta["source"])
-            
-    return sorted(list(files))
+    if not supabase_client:
+        return []
+    res = supabase_client.table("documents").select("filename").eq("user_id", user_id).execute()
+    filenames = []
+    if res.data:
+        for doc in res.data:
+            filenames.append(doc["filename"])
+    return sorted(list(set(filenames)))
 
 def delete_document(filename: str, user_id: str) -> None:
     """
-    Removes all chunks of a filename for the specified user_id from ChromaDB.
+    Removes all document metadata and chunk vector embeddings for the specified user_id,
+    and removes the file from Supabase Storage.
     """
-    # Use $and operator to filter by source and user_id
-    collection.delete(
-        where={
-            "$and": [
-                {"source": {"$eq": filename}},
-                {"user_id": {"$eq": user_id}}
-            ]
-        }
-    )
+    if not supabase_client:
+        return
+
+    # 1. Fetch document metadata to retrieve Storage file_path
+    doc_res = supabase_client.table("documents").select("id, file_path").eq("user_id", user_id).eq("filename", filename).execute()
+    if doc_res.data:
+        for doc in doc_res.data:
+            # 2. Delete document row (cascades to delete embeddings)
+            supabase_client.table("documents").delete().eq("id", doc["id"]).execute()
+
+            # 3. Delete file from Storage notes bucket
+            try:
+                supabase_client.storage.from_("notes").remove(doc["file_path"])
+            except Exception as e:
+                print(f"Warning: Failed to delete Storage file {doc['file_path']}: {str(e)}")

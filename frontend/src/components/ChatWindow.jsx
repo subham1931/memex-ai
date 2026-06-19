@@ -61,7 +61,7 @@ export default function ChatWindow({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-app-bg text-text-primary transition-colors duration-150">
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-app-bg text-text-primary transition-colors duration-150">
       {/* Hidden file input for top-bar button */}
       <input
         type="file"
@@ -103,7 +103,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages Feed */}
-      <div className="flex-1 overflow-y-auto px-6 py-8">
+      <div className="flex-1 overflow-y-auto px-6 py-8 min-h-0">
         {messages.length === 0 ? (
           <div className="max-w-2xl mx-auto h-full flex flex-col justify-center text-left space-y-6">
             <div className="space-y-1">

@@ -7,6 +7,9 @@ export default function AuthCallback() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let timer = null;
+    let subscription = null;
+
     const handleAuthCallback = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -16,23 +19,19 @@ export default function AuthCallback() {
           throw error;
         } else {
           // Listen for session established
-          const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          const { data: { subscription: sub } } = supabase.auth.onAuthStateChange((event, session) => {
             if (session) {
-              subscription.unsubscribe();
+              sub.unsubscribe();
               navigate('/', { replace: true });
             }
           });
+          subscription = sub;
 
           // Timeout fallback of 5 seconds
-          const timer = setTimeout(() => {
-            subscription.unsubscribe();
+          timer = setTimeout(() => {
+            if (subscription) subscription.unsubscribe();
             navigate('/login', { replace: true });
           }, 5000);
-
-          return () => {
-            clearTimeout(timer);
-            subscription.unsubscribe();
-          };
         }
       } catch (err) {
         console.error('Auth callback processing failed:', err);
@@ -41,6 +40,11 @@ export default function AuthCallback() {
     };
 
     handleAuthCallback();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (subscription) subscription.unsubscribe();
+    };
   }, [navigate]);
 
   return (
