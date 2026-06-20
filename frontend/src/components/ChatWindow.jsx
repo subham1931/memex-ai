@@ -12,8 +12,18 @@ export default function ChatWindow({
   uploading,
   theme,
   onToggleTheme,
-  onOpenSidebar
+  onOpenSidebar,
+  modelInfo,
+  selectedModelId,
+  onModelChange,
 }) {
+  const formatModelName = (name) => (name || '').replace(/^nvidia\//, '');
+
+  const modelOptions = modelInfo?.models ?? [
+    { id: 'groq', provider: 'Groq', model: 'llama-3.3-70b-versatile' },
+    { id: 'nvidia', provider: 'NVIDIA', model: 'nvidia/nv-embedcode-7b-v1' },
+  ];
+  const activeModelId = selectedModelId || modelInfo?.default_model_id || 'groq';
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -194,9 +204,24 @@ export default function ChatWindow({
               <Send className="h-3.5 w-3.5" />
             </button>
           </div>
-          <p className="text-center text-[10px] text-text-muted mt-2 hidden sm:block">
-            Memex answers from your notes only
-          </p>
+          <div className="flex flex-col items-center gap-1.5 mt-2">
+            <p className="text-center text-[10px] text-text-muted">
+              Memex answers from your notes only
+            </p>
+            <select
+              value={activeModelId}
+              onChange={(e) => onModelChange?.(e.target.value)}
+              disabled={loading}
+              className="text-[10px] bg-sidebar-bg border border-border-subtle text-text-primary rounded-full px-3 py-1.5 outline-none focus:border-accent focus:ring-1 focus:ring-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed appearance-none text-center min-w-[220px] max-w-full"
+              aria-label="Select model"
+            >
+              {modelOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.provider} · {formatModelName(option.model)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
     </div>

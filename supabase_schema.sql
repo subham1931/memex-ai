@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS public.embeddings (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     document_id UUID NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    embedding vector(384) NOT NULL,
+    embedding vector(4096) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -74,16 +74,9 @@ CREATE POLICY "Users can delete their own embeddings"
     ON public.embeddings FOR DELETE
     USING (auth.uid() = user_id);
 
--- Create an index for faster vector similarity search
-CREATE INDEX IF NOT EXISTS embeddings_embedding_idx 
-    ON public.embeddings 
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
-
-
--- 3. Create match_embeddings RPC function for vector similarity search
+-- Exact cosine search (no ANN index — 4096 dims exceeds pgvector vector index limit of 2000)
 CREATE OR REPLACE FUNCTION public.match_embeddings(
-    query_embedding vector(384),
+    query_embedding vector(4096),
     match_user_id UUID,
     match_count INT DEFAULT 3
 )

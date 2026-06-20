@@ -5,6 +5,7 @@ export default function Sidebar({
   files,
   onUpload,
   onDeleteFile,
+  onRenameFile,
   uploading,
   sessions = [],
   activeSessionId,
@@ -21,10 +22,13 @@ export default function Sidebar({
   const fileInputRef = useRef(null);
   
   // Session UI states
-  const [editingSessionId, setEditingSessionId] = useState(null);
-  const [editingText, setEditingText] = useState('');
   const [openMenuId, setOpenMenuId] = useState(null);
   const [deletingIds, setDeletingIds] = useState([]);
+
+  // File rename state
+  const startFileRename = (filename) => {
+    onRenameFile(filename);
+  };
   
   const menuRef = useRef(null);
 
@@ -87,16 +91,8 @@ export default function Sidebar({
   });
 
   const startEditing = (session) => {
-    setEditingSessionId(session.id);
-    setEditingText(session.title);
     setOpenMenuId(null);
-  };
-
-  const saveRename = (id) => {
-    if (editingText.trim()) {
-      onRenameSession(id, editingText.trim());
-    }
-    setEditingSessionId(null);
+    onRenameSession(session.id);
   };
 
   const handleDeleteClick = (id) => {
@@ -181,12 +177,10 @@ export default function Sidebar({
                     {groupList.map((session) => {
                       const isActive = session.id === activeSessionId;
                       const isDeleting = deletingIds.includes(session.id);
-                      const isEditing = editingSessionId === session.id;
 
                       return (
                         <div
                           key={session.id}
-                          onDoubleClick={() => startEditing(session)}
                           className={`group relative flex items-center justify-between rounded-md mx-1 transition-all duration-150 cursor-pointer ${
                             isActive 
                               ? 'bg-message-user-bg border-l-2 border-accent pl-2 pr-2 py-1.5' 
@@ -197,33 +191,16 @@ export default function Sidebar({
                         >
                           <div 
                             className="flex items-center gap-2 min-w-0 flex-1 h-full"
-                            onClick={() => !isEditing && handleSessionClick(session.id)}
+                            onClick={() => handleSessionClick(session.id)}
                           >
                             <MessageSquare className="h-3.5 w-3.5 text-text-muted shrink-0" />
-                            
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editingText}
-                                onChange={(e) => setEditingText(e.target.value)}
-                                onBlur={() => saveRename(session.id)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') saveRename(session.id);
-                                  if (e.key === 'Escape') setEditingSessionId(null);
-                                }}
-                                autoFocus
-                                className="bg-input-bg border border-border-focus text-xs text-text-primary rounded px-1.5 py-0.5 outline-none w-full font-sans"
-                              />
-                            ) : (
-                              <span className="text-xs text-text-primary truncate font-normal select-none">
-                                {session.title || "New Chat"}
-                              </span>
-                            )}
+                            <span className="text-xs text-text-primary truncate font-normal select-none">
+                              {session.title || "New Chat"}
+                            </span>
                           </div>
 
                           {/* Three dot actions */}
-                          {!isEditing && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 shrink-0">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -263,7 +240,6 @@ export default function Sidebar({
                                 </div>
                               )}
                             </div>
-                          )}
                         </div>
                       );
                     })}
@@ -290,6 +266,7 @@ export default function Sidebar({
             <div className="space-y-0.5">
               {files.map((filename) => {
                 const ext = filename.split('.').pop().toUpperCase();
+
                 return (
                   <div
                     key={filename}
@@ -304,13 +281,22 @@ export default function Sidebar({
                         {ext}
                       </span>
                     </div>
-                    <button
-                      onClick={() => onDeleteFile(filename)}
-                      className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-item-hover opacity-0 group-hover:opacity-100 transition-all cursor-pointer shrink-0"
-                      title={`Delete ${filename}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                      <button
+                        onClick={() => startFileRename(filename)}
+                        className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-item-hover cursor-pointer"
+                        title="Rename"
+                      >
+                        <Edit className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => onDeleteFile(filename)}
+                        className="p-1 rounded text-text-muted hover:text-red-400 hover:bg-item-hover cursor-pointer"
+                        title={`Delete ${filename}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}

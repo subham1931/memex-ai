@@ -22,7 +22,10 @@ if supabase_url and supabase_service_key and supabase_url != "your_supabase_proj
         print(f"Warning: Failed to initialize Supabase client: {str(e)}")
 
 # Import RAG pipeline functions
-from rag import add_document, query_documents, ask_llm, get_uploaded_files, delete_document
+from rag import (
+    add_document, query_documents, ask_llm, get_uploaded_files, delete_document, rename_document,
+    get_model_options, DEFAULT_MODEL_ID,
+)
 
 app = FastAPI(title="Memex-AI API", description="Personal Notes Assistant RAG API")
 
@@ -86,6 +89,7 @@ def get_supabase_client(authorization: str = Header(None)) -> Client:
 class AskRequest(BaseModel):
     question: str
     history: Optional[List[dict]] = None
+    model_id: Optional[str] = DEFAULT_MODEL_ID
 
 class SessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
@@ -101,10 +105,20 @@ class TitlePatch(BaseModel):
 class MessageUpdate(BaseModel):
     content: str
 
+class FileRename(BaseModel):
+    new_filename: str
+
+@app.get("/config")
+def get_config():
+    return {
+        "models": get_model_options(),
+        "default_model_id": DEFAULT_MODEL_ID,
+    }
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user = Depends(get_current_user)):
     """
-    Accepts .md, .txt, and .pdf files, chunks them, embeds with sentence-transformers,
+    Accepts .md, .txt, and .pdf files, chunks them, embeds via NVIDIA API,
     and stores them in Supabase (Storage + pgvector), isolated by user_id.
     """
     filename = file.filename
@@ -174,12 +188,14 @@ async def ask_question(request: AskRequest, user = Depends(get_current_user)):
         context_chunks = query_documents(question, user.id, n_results=3)
         
         # Get LLM's answer with conversation history
-        answer = ask_llm(question, context_chunks, history=request.history)
+        answer = ask_llm(question, context_chunks, history=request.history, model_id=request.model_id)
         
         return {
             "answer": answer,
             "sources": context_chunks
         }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in RAG pipeline: {str(e)}")
 
@@ -205,6 +221,24 @@ async def delete_file(filename: str, user = Depends(get_current_user)):
         return {"status": "success", "message": f"File '{filename}' successfully deleted from database."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete file '{filename}': {str(e)}")
+
+@app.patch("/files/{filename}/rename")
+async def rename_file(filename: str, body: FileRename, user = Depends(get_current_user)):
+    """
+    Renames a file (updates documents table and moves storage object).
+    """
+    new_filename = body.new_filename.strip()
+    if not new_filename:
+        raise HTTPException(status_code=400, detail="New filename cannot be empty.")
+    if not (new_filename.endswith(".txt") or new_filename.endswith(".md") or new_filename.endswith(".pdf")):
+        raise HTTPException(status_code=400, detail="Filename must end with .txt, .md, or .pdf")
+    try:
+        result = rename_document(filename, new_filename, user.id)
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rename file: {str(e)}")
 
 @app.post("/sessions")
 async def create_session(request: SessionCreate = None, user = Depends(get_current_user), db: Client = Depends(get_supabase_client)):

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatWindow from './components/ChatWindow';
+import ConfirmModal from './components/ConfirmModal';
+import RenameModal from './components/RenameModal';
 import { supabase } from './supabaseClient';
 import { fetchWithAuth } from './utils/fetchWithAuth';
 
@@ -13,6 +15,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [modelInfo, setModelInfo] = useState(null);
+  const [selectedModelId, setSelectedModelId] = useState(() => {
+    return localStorage.getItem('selectedModelId') || 'groq';
+  });
 
   // Supabase Sessions State
   const [sessions, setSessions] = useState([]);
@@ -25,6 +31,12 @@ export default function App() {
 
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null });
+
+  // Rename modal state
+  const [renameModal, setRenameModal] = useState({ open: false, title: '', currentName: '', onConfirm: null });
 
   // Apply theme to document element
   useEffect(() => {
@@ -69,6 +81,27 @@ export default function App() {
       setError('Could not connect to Memex-AI server. Please ensure the backend is running.');
     }
   }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/config`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setModelInfo(data);
+        const stored = localStorage.getItem('selectedModelId');
+        const validIds = (data.models || []).map((m) => m.id);
+        const fallback = data.default_model_id || validIds[0] || 'groq';
+        const nextId = validIds.includes(stored) ? stored : fallback;
+        setSelectedModelId(nextId);
+        localStorage.setItem('selectedModelId', nextId);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleModelChange = (modelId) => {
+    setSelectedModelId(modelId);
+    localStorage.setItem('selectedModelId', modelId);
+  };
 
   // Fetch list of sessions
   const fetchSessions = useCallback(async () => {
@@ -163,36 +196,43 @@ export default function App() {
   };
 
   // Handle deleting a session
-  const handleDeleteSession = async (sessionId) => {
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) throw new Error('Failed to delete session.');
+  // Handle deleting a session
+  const handleDeleteSession = (sessionId) => {
+    const session = sessions.find(s => s.id === sessionId);
+    const sessionTitle = session?.title || "this chat";
+    
+    setConfirmModal({
+      open: true,
+      title: "Delete Chat",
+      message: `Are you sure you want to delete "${sessionTitle}"? All messages in this conversation will be permanently removed.`,
+      onConfirm: async () => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}`, {
+            method: 'DELETE'
+          });
+          if (!res.ok) throw new Error('Failed to delete session.');
 
-      // Update state using callback form to avoid stale closure
-      setSessions(prev => {
-        const remaining = prev.filter(s => s.id !== sessionId);
-
-        if (activeSessionId === sessionId) {
-          if (remaining.length > 0) {
-            setActiveSessionId(remaining[0].id);
-            loadSessionMessages(remaining[0].id);
-          } else {
-            // If no sessions left, create a new one
-            createNewSession("New Chat", true);
-          }
+          setSessions(prev => {
+            const remaining = prev.filter(s => s.id !== sessionId);
+            if (activeSessionId === sessionId) {
+              if (remaining.length > 0) {
+                setActiveSessionId(remaining[0].id);
+                loadSessionMessages(remaining[0].id);
+              } else {
+                createNewSession("New Chat", true);
+              }
+            }
+            return remaining;
+          });
+        } catch (err) {
+          console.error(err);
+          alert('Could not delete session.');
         }
-
-        return remaining;
-      });
-    } catch (err) {
-      console.error(err);
-      alert('Could not delete session.');
-    }
+      }
+    });
   };
 
-  // Handle renaming a session
+  // Handle renaming a session (direct - used by auto-rename)
   const handleRenameSession = async (sessionId, newTitle) => {
     try {
       const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}/title`, {
@@ -208,6 +248,18 @@ export default function App() {
       console.error(err);
       alert('Could not rename session.');
     }
+  };
+
+  // Handle renaming a session (via modal - user-initiated)
+  const handleRenameSessionModal = (sessionId) => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    setRenameModal({
+      open: true,
+      title: "Rename Chat",
+      currentName: session.title || "New Chat",
+      onConfirm: (newTitle) => handleRenameSession(sessionId, newTitle)
+    });
   };
 
   // Save message to Supabase
@@ -265,26 +317,54 @@ export default function App() {
 
   // Handle file deletions
   const handleDeleteFile = async (filename) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"? This will remove all its text chunks from the vector store.`)) {
-      return;
-    }
-
-    setError(null);
-    try {
-      const res = await fetchWithAuth(`${API_BASE}/files/${encodeURIComponent(filename)}`, {
-        method: 'DELETE',
-      });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Delete failed.');
+    setConfirmModal({
+      open: true,
+      title: "Delete File",
+      message: `Are you sure you want to delete "${filename}"? This will remove all its text chunks from the vector store. This action cannot be undone.`,
+      onConfirm: async () => {
+        setError(null);
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/files/${encodeURIComponent(filename)}`, {
+            method: 'DELETE',
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.detail || 'Delete failed.');
+          }
+          await fetchFiles();
+        } catch (err) {
+          console.error(err);
+          alert(`Failed to delete file: ${err.message}`);
+        }
       }
+    });
+  };
 
-      await fetchFiles(); // Refresh list
-    } catch (err) {
-      console.error(err);
-      alert(`Failed to delete file: ${err.message}`);
-    }
+  // Handle file rename
+  const handleRenameFile = (oldFilename) => {
+    setRenameModal({
+      open: true,
+      title: "Rename File",
+      currentName: oldFilename,
+      onConfirm: async (newFilename) => {
+        if (!newFilename.trim() || newFilename === oldFilename) return;
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/files/${encodeURIComponent(oldFilename)}/rename`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_filename: newFilename })
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.detail || 'Rename failed.');
+          }
+          await fetchFiles();
+        } catch (err) {
+          console.error(err);
+          alert(`Failed to rename file: ${err.message}`);
+        }
+      }
+    });
   };
 
   // Handle sending chat messages
@@ -340,7 +420,7 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ question: text, history }),
+        body: JSON.stringify({ question: text, history, model_id: selectedModelId }),
       });
 
       if (!res.ok) {
@@ -371,7 +451,7 @@ export default function App() {
       console.error(err);
       const errorMsg = {
         role: 'assistant',
-        text: `⚠️ **Error calling RAG assistant:** ${err.message}. Please check that the server is online and your Gemini API Key is configured in backend/.env.`,
+        text: `⚠️ **Error calling RAG assistant:** ${err.message}. Please check that the backend is running and your API keys are configured in backend/.env.`,
         sources: [],
       };
       const savedErrorMsg = await saveMessageToSupabase(currentSessionId, 'assistant', errorMsg.text, []);
@@ -427,7 +507,7 @@ export default function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ question: newText }),
+        body: JSON.stringify({ question: newText, model_id: selectedModelId }),
       });
 
       if (!askRes.ok) {
@@ -472,21 +552,26 @@ export default function App() {
   };
 
   // Clear all messages from active session (keeps the session intact)
-  const handleClearChat = async (sessionId) => {
+  const handleClearChat = (sessionId) => {
     if (!sessionId) return;
-    try {
-      // Delete the session and create a fresh one (simplest approach with current API)
-      const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) throw new Error('Failed to clear chat.');
-      
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
-      await createNewSession("New Chat", true);
-    } catch (err) {
-      console.error(err);
-      alert('Could not clear chat.');
-    }
+    setConfirmModal({
+      open: true,
+      title: "Clear Chat",
+      message: "Are you sure you want to clear this chat? All messages will be deleted and a new chat will be created.",
+      onConfirm: async () => {
+        try {
+          const res = await fetchWithAuth(`${API_BASE}/sessions/${sessionId}`, {
+            method: 'DELETE'
+          });
+          if (!res.ok) throw new Error('Failed to clear chat.');
+          setSessions(prev => prev.filter(s => s.id !== sessionId));
+          await createNewSession("New Chat", true);
+        } catch (err) {
+          console.error(err);
+          alert('Could not clear chat.');
+        }
+      }
+    });
   };
 
   // Sign out of Google session
@@ -506,17 +591,36 @@ export default function App() {
 
   return (
     <div className="flex fixed inset-0 overflow-hidden bg-app-bg font-sans text-text-primary antialiased">
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.open}
+        onClose={() => setConfirmModal({ ...confirmModal, open: false })}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+      />
+
+      {/* Rename Modal */}
+      <RenameModal
+        isOpen={renameModal.open}
+        onClose={() => setRenameModal({ ...renameModal, open: false })}
+        onConfirm={renameModal.onConfirm}
+        title={renameModal.title}
+        currentName={renameModal.currentName}
+      />
+
       {/* Sidebar (File list, uploads & Recents history) */}
       <Sidebar
         files={files}
         onUpload={handleUpload}
         onDeleteFile={handleDeleteFile}
+        onRenameFile={handleRenameFile}
         uploading={uploading}
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelectSession={handleSelectSession}
         onDeleteSession={handleDeleteSession}
-        onRenameSession={handleRenameSession}
+        onRenameSession={handleRenameSessionModal}
         onCreateSession={() => createNewSession("New Chat", true)}
         onClearChat={handleClearChat}
         user={user}
@@ -550,6 +654,9 @@ export default function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           onOpenSidebar={() => setSidebarOpen(true)}
+          modelInfo={modelInfo}
+          selectedModelId={selectedModelId}
+          onModelChange={handleModelChange}
         />
       </div>
     </div>
