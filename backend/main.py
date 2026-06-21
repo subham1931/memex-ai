@@ -29,14 +29,21 @@ from rag import (
 
 app = FastAPI(title="Memex-AI API", description="Personal Notes Assistant RAG API")
 
-# Enable CORS for frontend integration
-frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
-cors_origins = [frontend_url] if frontend_url else ["*"]
+def get_cors_origins() -> list[str]:
+    raw = os.getenv("FRONTEND_URL", "")
+    origins = [url.strip().rstrip("/") for url in raw.split(",") if url.strip()]
+    if os.getenv("ENV") != "production":
+        for dev_origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
+            if dev_origin not in origins:
+                origins.append(dev_origin)
+    return origins
+
+cors_origins = get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
+    allow_origins=cors_origins if cors_origins else ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

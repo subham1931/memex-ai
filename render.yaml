@@ -36,4 +36,4 @@ services:
       - key: LLM_MODEL
         value: llama-3.3-70b-versatile
       - key: FRONTEND_URL
-        sync: false
+        value: https://memex-ai.vercel.app
