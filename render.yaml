@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: memex-ai-backend
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /config
+    envVars:
+      - key: ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: NVIDIA_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: EMBEDDING_PROVIDER
+        value: NVIDIA
+      - key: EMBEDDING_MODEL
+        value: nvidia/nv-embedcode-7b-v1
+      - key: NVIDIA_LLM_MODEL
+        value: meta/llama-3.1-70b-instruct
+      - key: LLM_PROVIDER
+        value: Groq
+      - key: LLM_MODEL
+        value: llama-3.3-70b-versatile
+      - key: FRONTEND_URL
+        sync: false

@@ -30,12 +30,15 @@ from rag import (
 app = FastAPI(title="Memex-AI API", description="Personal Notes Assistant RAG API")
 
 # Enable CORS for frontend integration
+frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+cors_origins = [frontend_url] if frontend_url else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for development convenience
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Auth dependency to verify Supabase JWT
@@ -382,4 +385,6 @@ async def delete_subsequent_messages(message_id: str, user = Depends(get_current
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("ENV", "development") != "production"
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload)
